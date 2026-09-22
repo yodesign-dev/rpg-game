@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Các route bắt buộc phải đăng nhập mới vào được
-const PROTECTED_PATHS = ['/create-character', '/character']
+const PROTECTED_PATHS = ['/create-character', '/character', '/dungeon']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
