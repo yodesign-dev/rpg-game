@@ -114,8 +114,9 @@ export default async function CharacterPage() {
           </div>
         </div>
 
-        <nav className="grid grid-cols-3 gap-4 mt-8">
+        <nav className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
           <NavCard href="/dungeon" label="Dungeon" icon="🗝️" />
+          <NavCard href="/skills" label="Kỹ Năng" icon="✨" />
           <NavCard href="/inventory" label="Túi Đồ" icon="🎒" />
           <NavCard href="/quests" label="Nhiệm Vụ" icon="📜" />
         </nav>
