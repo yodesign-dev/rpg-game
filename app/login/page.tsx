@@ -35,7 +35,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message)
       } else {
-        window.location.href = '/create-character'
+        window.location.href = '/character'
       }
     }
 

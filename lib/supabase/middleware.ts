@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Các route bắt buộc phải đăng nhập mới vào được
-const PROTECTED_PATHS = ['/create-character']
+const PROTECTED_PATHS = ['/create-character', '/character']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -45,7 +45,7 @@ export async function updateSession(request: NextRequest) {
   // Đã đăng nhập rồi mà vẫn cố vào /login thì đá thẳng qua trang tạo nhân vật
   if (path === '/login' && user) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/create-character'
+    redirectUrl.pathname = '/character'
     return NextResponse.redirect(redirectUrl)
   }
 
