@@ -39,14 +39,18 @@ export async function updateSession(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/login'
     redirectUrl.searchParams.set('redirectTo', path)
-    return NextResponse.redirect(redirectUrl)
+    const redirectResponse = NextResponse.redirect(redirectUrl)
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie))
+    return redirectResponse
   }
 
-  // Đã đăng nhập rồi mà vẫn cố vào /login thì đá thẳng qua trang tạo nhân vật
+  // Đã đăng nhập rồi mà vẫn cố vào /login thì đá thẳng qua trang nhân vật
   if (path === '/login' && user) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/character'
-    return NextResponse.redirect(redirectUrl)
+    const redirectResponse = NextResponse.redirect(redirectUrl)
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie))
+    return redirectResponse
   }
 
   return response
