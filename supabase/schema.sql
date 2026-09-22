@@ -425,7 +425,7 @@ declare
   v_was_full_ap boolean;
   -- Kết quả cộng dồn
   v_exp_gained int := 0; v_gold_gained int := 0; v_item_dropped text := null;
-  v_addexp record;
+  v_leveled_up boolean := false; v_new_level int;
 begin
   -- 1. Khóa + đọc dữ liệu nhân vật
   select user_id, level, exp, gold, current_hp, current_ap, max_ap, class_id
@@ -559,7 +559,8 @@ begin
 
   -- 8. Thưởng nếu thắng: EXP (qua hàm add_experience có sẵn), rơi đồ, ghi nhận đã qua tầng
   if v_win then
-    select * into v_addexp from add_experience(p_character_id, v_exp_gained);
+    select leveled_up, new_level into v_leveled_up, v_new_level
+    from add_experience(p_character_id, v_exp_gained);
 
     if v_drop_item_id is not null and random() < v_drop_rate then
       insert into inventory (character_id, item_id, quantity) values (p_character_id, v_drop_item_id, 1);
@@ -577,8 +578,8 @@ begin
     v_exp_gained,
     v_gold_gained,
     v_item_dropped,
-    coalesce(v_addexp.leveled_up, false),
-    coalesce(v_addexp.new_level, v_level),
+    v_leveled_up,
+    coalesce(v_new_level, v_level),
     v_log;
 end;
 $$;
