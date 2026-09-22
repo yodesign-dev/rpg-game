@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
-type Floor = {
+export type Floor = {
   id: string
   floor_number: number
   is_boss_floor: boolean
@@ -42,16 +42,12 @@ export default function FloorList({
   characterId,
   floors,
   highestCleared,
-  currentHp,
-  maxHp,
   currentAp,
   apCost,
 }: {
   characterId: string
   floors: Floor[]
   highestCleared: number
-  currentHp: number
-  maxHp: number
   currentAp: number
   apCost: number
 }) {

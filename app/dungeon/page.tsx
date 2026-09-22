@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
-import FloorList from './FloorList'
+import FloorList, { type Floor } from './FloorList'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
@@ -43,10 +43,7 @@ export default async function DungeonPage() {
     ? Math.max(...clearedRuns.map((r) => r.floor_number))
     : 0
 
-  const cls = character.classes as { base_hp: number; hp_per_level: number }
-  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
-
-  const floors = ((dungeon?.dungeon_floors as any[]) ?? []).sort(
+  const floors = ((dungeon?.dungeon_floors as Floor[]) ?? []).sort(
     (a, b) => a.floor_number - b.floor_number
   )
 
@@ -81,8 +78,6 @@ export default async function DungeonPage() {
               characterId={character.id}
               floors={floors}
               highestCleared={highestCleared}
-              currentHp={character.current_hp ?? maxHp}
-              maxHp={maxHp}
               currentAp={character.current_ap}
               apCost={dungeon.ap_cost}
             />

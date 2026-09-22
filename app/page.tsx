@@ -45,7 +45,7 @@ export default async function CharacterPage() {
 
   // --- Tính hồi AP kiểu lazy: dựa vào thời gian trôi qua từ lần cập nhật gần nhất ---
   const lastUpdate = new Date(character.last_ap_update)
-  const elapsedMs = Date.now() - lastUpdate.getTime()
+  const elapsedMs = msSinceNow(lastUpdate)
   const elapsedMinutes = Math.floor(elapsedMs / 60000)
   const regenTicks = Math.floor(elapsedMinutes / character.ap_regen_minutes)
 
@@ -152,6 +152,10 @@ function StatRow({
       )}
     </div>
   )
+}
+
+function msSinceNow(date: Date) {
+  return Date.now() - date.getTime()
 }
 
 function NavCard({ href, label, icon }: { href: string; label: string; icon: string }) {
