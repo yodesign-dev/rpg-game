@@ -81,7 +81,15 @@ export default function FloorList({
       return
     }
 
-    const res = data as CombatResult
+    // resolve_dungeon_floor is declared RETURNS TABLE(...), so PostgREST
+    // always returns an array of rows (one row here), never a bare object.
+    const res = (Array.isArray(data) ? data[0] : data) as CombatResult
+
+    if (!res) {
+      setError('Không nhận được kết quả trận đấu')
+      return
+    }
+
     setResult(res)
     setResultFloorId(floor.id)
     setLocalAp((ap) => ap - apCost)
