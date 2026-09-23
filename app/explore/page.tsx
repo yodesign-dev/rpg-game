@@ -29,7 +29,7 @@ export default async function ExplorePage() {
 
   if (!character) redirect('/create-character')
 
-  const [regen, stats, { data: zonesRaw }, { data: dropsRaw }] = await Promise.all([
+  const [regen, stats, { data: zonesRaw, error: zonesError }, { data: dropsRaw }] = await Promise.all([
     applyRegen(supabase, character),
     getCharacterStats(supabase, character.id),
     supabase
@@ -85,6 +85,12 @@ export default async function ExplorePage() {
             Chọn vùng và số lượt. AP chỉ trừ một lần khi vào vùng — đánh tới khi đủ lượt hoặc hết HP.
           </p>
         </header>
+
+        {(zonesError || zones.length === 0) && (
+          <p className={`${mono.className} text-sm text-[#e09595] mb-4`}>
+            Không tải được danh sách vùng{zonesError ? `: ${zonesError.message}` : ''}.
+          </p>
+        )}
 
         <ExploreManager
           characterId={character.id}

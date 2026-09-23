@@ -252,11 +252,13 @@ export default function ExploreManager({
       >
         {busy
           ? 'Đang thám hiểm…'
-          : exhausted
-            ? 'Kiệt sức — chờ hồi HP'
-            : lackAp
-              ? `Thiếu AP (cần ${zone?.apCost ?? 0})`
-              : `Thám hiểm ${turns} lượt · −${zone?.apCost} AP`}
+          : !zone
+            ? 'Chưa chọn vùng'
+            : exhausted
+              ? 'Kiệt sức — chờ hồi HP'
+              : lackAp
+                ? `Thiếu AP (cần ${zone.apCost})`
+                : `Thám hiểm ${turns} lượt · −${zone.apCost} AP`}
       </button>
 
       {error && <p className="text-sm text-[#e09595] mt-3">{error}</p>}

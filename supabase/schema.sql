@@ -1298,6 +1298,7 @@ create table recipe_ingredients (
 
 alter table recipes enable row level security;
 alter table recipe_ingredients enable row level security;
+grant select on table recipes, recipe_ingredients to anon, authenticated;
 create policy "public read recipes" on recipes for select using (true);
 create policy "public read recipe_ingredients" on recipe_ingredients for select using (true);
 
@@ -1661,6 +1662,11 @@ create policy "own explore_runs select" on explore_runs
   for select using (
     exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
   );
+
+-- Project không tự cấp quyền cho bảng mới → phải grant tường minh, nếu không
+-- PostgREST không đọc được dù RLS policy đúng.
+grant select on table zones, zone_enemies, zone_drops to anon, authenticated;
+grant select on table explore_runs to authenticated;
 
 -- Chạy toàn bộ p_turns lượt (1-100) trong 1 lần gọi. Trả về jsonb tổng kết
 -- (không dùng RETURNS TABLE để tránh lỗi 42702 trùng tên cột).
