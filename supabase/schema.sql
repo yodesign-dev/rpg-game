@@ -138,6 +138,8 @@ create table inventory (
   rolled_lifesteal numeric not null default 0,
   -- Tier riêng của món trang bị này (null = đồ mua ở chợ / vật phẩm gộp chồng → dùng items.rarity)
   rarity        text check (rarity in ('common', 'rare', 'epic', 'legendary')),
+  locked        boolean not null default false,          -- 🔒 không bán được
+  enchant_level int not null default 0 check (enchant_level between 0 and 5),
   -- Hiệu ứng đặc biệt của món Huyền Thoại (random lúc tạo), null nếu không có
   legendary_effect text check (legendary_effect in ('double_strike', 'deadly_crit', 'opening_strike', 'guardian', 'thorns')),
   acquired_at   timestamptz not null default now()
@@ -894,7 +896,8 @@ create table if not exists activity_feed (
   id             uuid primary key default gen_random_uuid(),
   character_id   uuid references characters(id) on delete set null,
   character_name text not null,               -- chụp lại tên lúc xảy ra
-  kind           text not null check (kind in ('boss_kill', 'legendary_item')),
+  kind           text not null check (kind in ('boss_kill', 'legendary_item', 'title')),
+  character_title text,                       -- danh hiệu đang đeo lúc đăng
   payload        jsonb not null default '{}'::jsonb,
   created_at     timestamptz not null default now()
 );
@@ -910,11 +913,15 @@ grant select on table activity_feed to authenticated;
 
 create or replace function public.post_activity(p_character_id uuid, p_kind text, p_payload jsonb)
 returns void
-language sql
+language plpgsql
 set search_path = 'public'
 as $$
-  insert into activity_feed (character_id, character_name, kind, payload)
-  select c.id, c.name, p_kind, p_payload from characters c where c.id = p_character_id;
+begin
+  insert into activity_feed (character_id, character_name, character_title, kind, payload)
+  select c.id, c.name, t.emoji || ' ' || t.name, p_kind, p_payload
+  from characters c left join titles t on t.key = c.title_key
+  where c.id = p_character_id;
+end;
 $$;
 
 revoke execute on function public.post_activity(uuid, text, jsonb) from public, anon, authenticated;
@@ -1022,12 +1029,14 @@ begin
     v_roll_crit, v_roll_lifesteal
   );
 
-  -- Đồ Huyền Thoại (rơi hoặc chế tạo) lên bảng tin
+  -- Đồ Huyền Thoại (rơi hoặc chế tạo) lên bảng tin + đếm cho danh hiệu
   if p_rarity = 'legendary' then
+    update characters c set legendary_found = c.legendary_found + 1 where c.id = p_character_id;
     select i.name, i.key, i.icon into v_item_name, v_item_key, v_item_icon from items i where i.id = p_item_id;
     perform post_activity(p_character_id, 'legendary_item', jsonb_build_object(
       'item', v_item_name, 'item_key', v_item_key, 'icon', v_item_icon, 'effect', v_effect
     ));
+    perform award_titles(p_character_id);
   end if;
 end;
 $$;
@@ -1209,11 +1218,21 @@ begin
     insert into dungeon_runs (character_id, dungeon_id, current_floor, status, finished_at)
     values (p_character_id, v_dungeon_id, v_floor_number, 'cleared', now());
 
+    -- Bộ đếm thành tích + nhiệm vụ ngày
+    update characters c
+    set kills = c.kills + 1, boss_kills = c.boss_kills + case when v_is_boss_floor then 1 else 0 end
+    where c.id = p_character_id;
+    perform track_quest(p_character_id, 'kills', 1);
+    perform track_quest(p_character_id, 'dungeon', 1);
+    if v_is_boss_floor then perform track_quest(p_character_id, 'boss', 1); end if;
+
     if v_is_boss_floor then
       perform post_activity(p_character_id, 'boss_kill', jsonb_build_object(
         'boss', v_enemy_name, 'where', (select d.name from dungeons d where d.id = v_dungeon_id), 'source', 'dungeon'
       ));
     end if;
+
+    perform award_titles(p_character_id);
   end if;
 
   return query select
@@ -1400,14 +1419,15 @@ begin
   from inventory inv join items i on i.id = inv.item_id
   where inv.id = any(p_inventory_ids)
     and inv.character_id = p_character_id
-    and not inv.equipped;
+    and not inv.equipped
+    and not inv.locked;
 
   if v_sold < v_requested then
-    raise exception 'Có món không bán được (đang mặc hoặc không còn trong túi) — hãy tải lại trang';
+    raise exception 'Có món không bán được (đang mặc, đã khóa 🔒 hoặc không còn trong túi) — hãy tải lại trang';
   end if;
 
   delete from inventory inv
-  where inv.id = any(p_inventory_ids) and inv.character_id = p_character_id and not inv.equipped;
+  where inv.id = any(p_inventory_ids) and inv.character_id = p_character_id and not inv.equipped and not inv.locked;
 
   update characters c set gold = c.gold + v_gained where c.id = p_character_id;
 
@@ -2107,6 +2127,7 @@ declare
   v_turn int;
   v_turns_completed int := 0;
   v_wins int := 0;
+  v_boss_wins int := 0;
   v_died boolean := false;
   v_fight_exp int; v_fight_gold int;
   v_exp_gained int := 0; v_gold_gained int := 0;
@@ -2204,6 +2225,7 @@ begin
 
     if v_win then
       v_wins := v_wins + 1;
+      if v_is_boss then v_boss_wins := v_boss_wins + 1; end if;
 
       if v_is_boss then
         perform post_activity(p_character_id, 'boss_kill', jsonb_build_object(
@@ -2277,6 +2299,15 @@ begin
     from jsonb_each_text(v_drop_counts) e
   ) dc
   join items i on i.key = dc.item_key;
+
+  -- Bộ đếm thành tích + nhiệm vụ ngày + danh hiệu
+  update characters c
+  set kills = c.kills + v_wins, boss_kills = c.boss_kills + v_boss_wins
+  where c.id = p_character_id;
+  perform track_quest(p_character_id, 'kills', v_wins);
+  perform track_quest(p_character_id, 'boss', v_boss_wins);
+  perform track_quest(p_character_id, 'explore', 1);
+  perform award_titles(p_character_id);
 
   insert into explore_runs (character_id, zone_id, turns_requested, turns_completed, wins, died, exp_gained, gold_gained, drops)
   values (p_character_id, p_zone_id, p_turns, v_turns_completed, v_wins, v_died, v_exp_gained, v_gold_gained, v_drops);
@@ -2524,3 +2555,658 @@ from (values
 join zones z on z.key = d.zone_key
 join items i on i.key = d.item_key
 where not exists (select 1 from zone_drops zd where zd.zone_id = z.id);
+
+-- ============================================================================
+-- ĐỢT 1: NGUYÊN LIỆU, CƯỜNG HÓA, KHÓA ĐỒ, DANH HIỆU, XẾP HẠNG, NỘM TẬP, NHIỆM VỤ NGÀY
+-- ============================================================================
+
+-- Đợt 1 (tham khảo DautoRPG): rã/ghép nguyên liệu, khóa đồ, cường hóa +1..+5,
+-- bộ đếm thành tích + danh hiệu, bảng xếp hạng + lực chiến, nộm tập, nhiệm vụ
+-- hằng ngày. Mọi thao tác đi qua RPC security definer (client không ghi thẳng
+-- được inventory/characters sau đợt anti-cheat).
+
+-- 1. Cột mới ---------------------------------------------------------------------
+-- Level tương ứng của món đồ (≈ level vùng/dungeon rơi ra) → chọn nguyên liệu cường hóa
+alter table items add column if not exists item_level int not null default 1;
+-- Bậc trong chuỗi nguyên liệu (1 = thấp nhất) + level vùng có nó → rã/ghép, thưởng nhiệm vụ
+alter table items add column if not exists material_tier int unique;
+alter table items add column if not exists material_level int;
+
+alter table inventory add column if not exists locked boolean not null default false;
+alter table inventory add column if not exists enchant_level int not null default 0
+  check (enchant_level between 0 and 5);
+
+-- Bộ đếm thành tích (trigger guard_character_game_state dùng danh sách trắng nên
+-- client tự động không sửa được các cột này)
+alter table characters add column if not exists kills int not null default 0;
+alter table characters add column if not exists boss_kills int not null default 0;
+alter table characters add column if not exists legendary_found int not null default 0;
+alter table characters add column if not exists best_enchant int not null default 0;
+alter table characters add column if not exists daily_bonus_count int not null default 0;
+
+-- 2. Chuỗi nguyên liệu --------------------------------------------------------------
+update items i set material_tier = m.tier, material_level = m.lvl
+from (values
+  ('wolf_fang', 1, 1), ('ice_shard', 2, 8), ('sand_scarab', 3, 15), ('swamp_venom', 4, 16),
+  ('magma_core', 5, 22), ('shadow_ore', 6, 25), ('shadow_essence', 7, 30), ('void_shard', 8, 35),
+  ('holy_relic', 9, 40), ('void_crystal', 10, 52), ('chaos_prism', 11, 62), ('angel_feather', 12, 72)
+) as m(key, tier, lvl)
+where i.key = m.key;
+
+update items i set item_level = v.lvl
+from (values
+  ('forest_blade', 6), ('frost_blade', 13), ('cursed_dagger', 22), ('fortress_greatsword', 32), ('voidforged_blade', 45),
+  ('desert_turban', 15), ('sandstrider_boots', 15), ('pharaoh_scepter', 26),
+  ('obsidian_shield', 22), ('ember_amulet', 22), ('inferno_greataxe', 33),
+  ('shadow_cloak', 30), ('bone_ring', 30), ('nightfall_bow', 43),
+  ('paladin_helm', 40), ('radiant_belt', 40), ('judgement_staff', 56),
+  ('voidwalker_boots', 52), ('star_ring', 52), ('starfall_daggers', 66),
+  ('crystal_plate', 62), ('prism_amulet', 62), ('chaos_blade', 76),
+  ('seraph_crown', 72), ('celestial_shield', 72), ('genesis_staff', 81)
+) as v(key, lvl)
+where i.key = v.key;
+
+-- Nguyên liệu bậc cao nhất có level ≤ p_level (null nếu chuỗi chưa có gì)
+create or replace function public.material_for_level(p_level int)
+returns uuid
+language sql
+stable
+set search_path = 'public'
+as $$
+  select i.id from items i
+  where i.material_tier is not null and i.material_level <= greatest(1, p_level)
+  order by i.material_tier desc limit 1;
+$$;
+
+-- Thêm p_qty vật phẩm gộp chồng vào túi (nguyên liệu, bình…)
+create or replace function public.add_stack(p_character_id uuid, p_item_id uuid, p_qty int)
+returns void
+language plpgsql
+set search_path = 'public'
+as $$
+declare
+  v_inventory_id uuid;
+begin
+  if p_qty <= 0 or p_item_id is null then return; end if;
+
+  select inv.id into v_inventory_id
+  from inventory inv where inv.character_id = p_character_id and inv.item_id = p_item_id
+  limit 1 for update;
+
+  if v_inventory_id is null then
+    insert into inventory (character_id, item_id, quantity) values (p_character_id, p_item_id, p_qty);
+  else
+    update inventory set quantity = quantity + p_qty where id = v_inventory_id;
+  end if;
+end;
+$$;
+
+-- Trừ p_qty vật phẩm gộp chồng (có thể nằm rải nhiều dòng). Báo lỗi nếu thiếu.
+create or replace function public.take_stack(p_character_id uuid, p_item_id uuid, p_qty int)
+returns void
+language plpgsql
+set search_path = 'public'
+as $$
+declare
+  v_have int;
+  v_remaining int := p_qty;
+  v_row record;
+begin
+  if p_qty <= 0 then return; end if;
+
+  select coalesce(sum(inv.quantity), 0) into v_have
+  from inventory inv where inv.character_id = p_character_id and inv.item_id = p_item_id and not inv.equipped;
+
+  if v_have < p_qty then
+    raise exception 'Không đủ % (cần %, có %)', (select name from items where id = p_item_id), p_qty, v_have;
+  end if;
+
+  for v_row in
+    select inv.id, inv.quantity from inventory inv
+    where inv.character_id = p_character_id and inv.item_id = p_item_id and not inv.equipped
+    order by inv.acquired_at
+    for update
+  loop
+    exit when v_remaining <= 0;
+    if v_row.quantity <= v_remaining then
+      v_remaining := v_remaining - v_row.quantity;
+      delete from inventory where id = v_row.id;
+    else
+      update inventory set quantity = quantity - v_remaining where id = v_row.id;
+      v_remaining := 0;
+    end if;
+  end loop;
+end;
+$$;
+
+revoke execute on function public.add_stack(uuid, uuid, int) from public, anon, authenticated;
+revoke execute on function public.take_stack(uuid, uuid, int) from public, anon, authenticated;
+
+-- 3. Khóa đồ --------------------------------------------------------------------------
+create or replace function public.toggle_item_lock(p_character_id uuid, p_inventory_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_locked boolean;
+begin
+  if (select c.user_id from characters c where c.id = p_character_id) is distinct from auth.uid() then
+    raise exception 'Không có quyền điều khiển nhân vật này';
+  end if;
+
+  update inventory inv set locked = not inv.locked
+  where inv.id = p_inventory_id and inv.character_id = p_character_id
+  returning inv.locked into v_locked;
+
+  if not found then raise exception 'Không tìm thấy vật phẩm trong túi đồ'; end if;
+  return v_locked;
+end;
+$$;
+
+-- 4. Rã / Ghép nguyên liệu ------------------------------------------------------------
+-- combine: 3 × bậc N → 1 × bậc N+1; break: 1 × bậc N → 3 × bậc N-1.
+-- Phí mỗi lần = giá bán của nguyên liệu bậc cao hơn trong cặp → ghép rồi rã
+-- vòng lại luôn lỗ, không thể dùng để in vàng. Trả về số lượng nhận được.
+create or replace function public.convert_material(p_character_id uuid, p_item_id uuid, p_mode text, p_times int)
+returns int
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_tier int; v_target uuid; v_fee int; v_gold int;
+  v_times int := greatest(1, coalesce(p_times, 1));
+  v_out int;
+begin
+  select c.gold into v_gold from characters c
+  where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select i.material_tier into v_tier from items i where i.id = p_item_id;
+  if v_tier is null then raise exception 'Vật phẩm này không rã/ghép được'; end if;
+
+  if p_mode = 'combine' then
+    select i.id, i.sell_price into v_target, v_fee from items i where i.material_tier = v_tier + 1;
+    if v_target is null then raise exception 'Đây đã là nguyên liệu cao nhất'; end if;
+    perform take_stack(p_character_id, p_item_id, 3 * v_times);
+    v_out := v_times;
+  elsif p_mode = 'break' then
+    select i.id into v_target from items i where i.material_tier = v_tier - 1;
+    if v_target is null then raise exception 'Đây đã là nguyên liệu thấp nhất'; end if;
+    select i.sell_price into v_fee from items i where i.id = p_item_id;
+    perform take_stack(p_character_id, p_item_id, v_times);
+    v_out := 3 * v_times;
+  else
+    raise exception 'Chế độ không hợp lệ';
+  end if;
+
+  v_fee := v_fee * v_times;
+  if v_gold < v_fee then raise exception 'Không đủ vàng (cần % vàng)', v_fee; end if;
+
+  update characters set gold = gold - v_fee where id = p_character_id;
+  perform add_stack(p_character_id, v_target, v_out);
+  perform track_quest(p_character_id, 'convert', v_times);
+
+  return v_out;
+end;
+$$;
+
+-- 5. Cường hóa +1..+5 ------------------------------------------------------------------
+-- Chi phí bước lên cấp N (1..5): (N+1) × nguyên liệu M hợp level món đồ,
+-- bước 4-5 thêm 1-2 × nguyên liệu bậc trên M. Vàng = N × (20 + 5 × item_level).
+-- Thành công 100/100/100/80/60%. Thất bại: mất nguyên liệu + vàng, không tụt cấp.
+create or replace function public.enchant_cost(p_item_level int, p_next_level int)
+returns table(out_mat uuid, out_mat_qty int, out_mat2 uuid, out_mat2_qty int, out_gold int, out_rate numeric)
+language sql
+stable
+set search_path = 'public'
+as $$
+  select m.id, p_next_level + 1,
+         case when p_next_level >= 4 then coalesce(m2.id, m.id) end,
+         case when p_next_level >= 4 then p_next_level - 3 else 0 end,
+         p_next_level * (20 + 5 * p_item_level),
+         (array[1.0, 1.0, 1.0, 0.8, 0.6])[p_next_level]
+  from items m
+  left join items m2 on m2.material_tier = m.material_tier + 1
+  where m.id = material_for_level(p_item_level);
+$$;
+
+create or replace function public.enchant_item(p_character_id uuid, p_inventory_id uuid)
+returns table(out_success boolean, out_level int, out_gold int)
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_gold int;
+  v_level int; v_rarity text; v_type text; v_item_level int;
+  v_bonus_atk int; v_bonus_def int; v_bonus_hp int; v_mult numeric;
+  v_next int;
+  v_mat uuid; v_mat_qty int; v_mat2 uuid; v_mat2_qty int; v_cost int; v_rate numeric;
+  v_success boolean;
+begin
+  select c.gold into v_gold from characters c
+  where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select inv.enchant_level, coalesce(inv.rarity, i.rarity), i.type, i.item_level, i.bonus_atk, i.bonus_def, i.bonus_hp
+    into v_level, v_rarity, v_type, v_item_level, v_bonus_atk, v_bonus_def, v_bonus_hp
+  from inventory inv join items i on i.id = inv.item_id
+  where inv.id = p_inventory_id and inv.character_id = p_character_id
+  for update of inv;
+
+  if not found then raise exception 'Không tìm thấy vật phẩm trong túi đồ'; end if;
+  if v_type not in ('weapon', 'armor') then raise exception 'Chỉ cường hóa được trang bị'; end if;
+  if v_level >= 5 then raise exception 'Đã cường hóa tối đa (+5)'; end if;
+
+  v_next := v_level + 1;
+  select ec.out_mat, ec.out_mat_qty, ec.out_mat2, ec.out_mat2_qty, ec.out_gold, ec.out_rate
+    into v_mat, v_mat_qty, v_mat2, v_mat2_qty, v_cost, v_rate
+  from enchant_cost(v_item_level, v_next) ec;
+
+  if v_gold < v_cost then raise exception 'Không đủ vàng (cần % vàng)', v_cost; end if;
+
+  perform take_stack(p_character_id, v_mat, v_mat_qty);
+  if v_mat2 is not null and v_mat2_qty > 0 then
+    perform take_stack(p_character_id, v_mat2, v_mat2_qty);
+  end if;
+  update characters set gold = gold - v_cost where id = p_character_id;
+
+  v_success := random() < v_rate;
+
+  if v_success then
+    -- Mỗi cấp +8% chỉ số gốc (đã nhân tier), tối thiểu +1 cho chỉ số món đó có
+    v_mult := rarity_multiplier(v_rarity) * 0.08;
+    update inventory inv
+    set enchant_level = v_next,
+        rolled_atk = inv.rolled_atk + case when v_bonus_atk > 0 then greatest(1, round(v_bonus_atk * v_mult))::int else 0 end,
+        rolled_def = inv.rolled_def + case when v_bonus_def > 0 then greatest(1, round(v_bonus_def * v_mult))::int else 0 end,
+        rolled_hp  = inv.rolled_hp  + case when v_bonus_hp  > 0 then greatest(1, round(v_bonus_hp  * v_mult))::int else 0 end
+    where inv.id = p_inventory_id;
+
+    update characters c set best_enchant = greatest(c.best_enchant, v_next) where c.id = p_character_id;
+  end if;
+
+  perform track_quest(p_character_id, 'enchant', 1);
+  perform award_titles(p_character_id);
+
+  return query select v_success, case when v_success then v_next else v_level end, v_gold - v_cost;
+end;
+$$;
+
+-- 6. Danh hiệu --------------------------------------------------------------------------
+create table if not exists titles (
+  key         text primary key,
+  name        text not null,
+  emoji       text not null,
+  description text not null,
+  stat        text not null check (stat in ('kills', 'boss_kills', 'level', 'legendary_found', 'best_enchant', 'daily_bonus_count')),
+  threshold   int not null,
+  sort_order  int not null default 0
+);
+
+create table if not exists character_titles (
+  character_id uuid not null references characters(id) on delete cascade,
+  title_key    text not null references titles(key),
+  earned_at    timestamptz not null default now(),
+  primary key (character_id, title_key)
+);
+
+alter table characters add column if not exists title_key text references titles(key);
+
+alter table titles enable row level security;
+alter table character_titles enable row level security;
+drop policy if exists "public read titles" on titles;
+create policy "public read titles" on titles for select using (true);
+drop policy if exists "own character_titles select" on character_titles;
+create policy "own character_titles select" on character_titles
+  for select using (exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid()));
+grant select on table titles to anon, authenticated;
+grant select on table character_titles to authenticated;
+
+insert into titles (key, name, emoji, description, stat, threshold, sort_order) values
+  ('hunter',        'Thợ Săn',            '🗡️', 'Hạ 100 quái',                 'kills',             100,   1),
+  ('slayer',        'Đồ Tể',              '⚔️', 'Hạ 1.000 quái',               'kills',             1000,  2),
+  ('exterminator',  'Kẻ Diệt Chủng',      '💀', 'Hạ 10.000 quái',              'kills',             10000, 3),
+  ('boss_breaker',  'Kẻ Hạ Boss',         '👑', 'Hạ 1 boss',                   'boss_kills',        1,     4),
+  ('boss_hunter',   'Sát Thủ Boss',       '🐉', 'Hạ 25 boss',                  'boss_kills',        25,    5),
+  ('boss_bane',     'Khắc Tinh Boss',     '☠️', 'Hạ 100 boss',                 'boss_kills',        100,   6),
+  ('veteran',       'Chiến Binh Dày Dạn', '🛡️', 'Đạt cấp 25',                  'level',             25,    7),
+  ('hero',          'Anh Hùng',           '🦸', 'Đạt cấp 50',                  'level',             50,    8),
+  ('living_legend', 'Huyền Thoại Sống',   '🌟', 'Đạt cấp 80',                  'level',             80,    9),
+  ('chosen_one',    'Người Được Chọn',    '✨', 'Nhận 1 món Huyền Thoại',      'legendary_found',   1,     10),
+  ('master_smith',  'Thợ Rèn Bậc Thầy',   '🔨', 'Cường hóa thành công lên +5', 'best_enchant',      5,     11),
+  ('diligent',      'Chăm Chỉ',           '📜', 'Hoàn thành đủ nhiệm vụ ngày 7 lần', 'daily_bonus_count', 7, 12)
+on conflict (key) do nothing;
+
+-- Bảng tin: thêm loại 'title' + chụp danh hiệu đang đeo lúc đăng
+
+-- (post_activity: xem phần BẢNG TIN phía trên)
+-- Trao các danh hiệu vừa đạt (đăng bảng tin). Trả về số danh hiệu mới.
+create or replace function public.award_titles(p_character_id uuid)
+returns int
+language plpgsql
+set search_path = 'public'
+as $$
+declare
+  v_title record;
+  v_count int := 0;
+begin
+  for v_title in
+    select t.key, t.name, t.emoji
+    from titles t join characters c on c.id = p_character_id
+    where (case t.stat
+             when 'kills' then c.kills when 'boss_kills' then c.boss_kills when 'level' then c.level
+             when 'legendary_found' then c.legendary_found when 'best_enchant' then c.best_enchant
+             when 'daily_bonus_count' then c.daily_bonus_count
+           end) >= t.threshold
+      and not exists (select 1 from character_titles ct where ct.character_id = p_character_id and ct.title_key = t.key)
+    order by t.sort_order
+  loop
+    insert into character_titles (character_id, title_key) values (p_character_id, v_title.key);
+    perform post_activity(p_character_id, 'title', jsonb_build_object('title', v_title.name, 'emoji', v_title.emoji));
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$$;
+
+create or replace function public.set_title(p_character_id uuid, p_title_key text)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  if (select c.user_id from characters c where c.id = p_character_id) is distinct from auth.uid() then
+    raise exception 'Không có quyền điều khiển nhân vật này';
+  end if;
+
+  if p_title_key is not null and not exists (
+    select 1 from character_titles ct where ct.character_id = p_character_id and ct.title_key = p_title_key
+  ) then
+    raise exception 'Chưa mở khóa danh hiệu này';
+  end if;
+
+  update characters set title_key = p_title_key where id = p_character_id;
+end;
+$$;
+
+-- 7. Lực chiến + Bảng xếp hạng -------------------------------------------------------------
+create or replace function public.character_power(p_character_id uuid)
+returns int
+language sql
+stable
+set search_path = 'public'
+as $$
+  select round(gs.atk * 2 + gs.def * 1.5 + gs.max_hp * 0.25
+               + (gs.crit_bonus + gs.lifesteal_bonus) * 400
+               + coalesce(array_length(get_character_effects(p_character_id), 1), 0) * 60)::int
+  from get_character_stats(p_character_id) gs;
+$$;
+
+-- Top 50 theo p_sort ('level' | 'power' | 'boss_kills'). security definer vì RLS
+-- chỉ cho đọc nhân vật của mình — chỉ trả các cột công khai.
+create or replace function public.get_leaderboard(p_sort text)
+returns table(
+  out_rank int, out_character_id uuid, out_name text, out_class_key text, out_class_name text,
+  out_level int, out_power int, out_boss_kills int, out_kills int, out_title text
+)
+language sql
+stable
+security definer
+set search_path = 'public'
+as $$
+  with base as (
+    select c.id, c.name, cl.key as class_key, cl.name as class_name, c.level, c.exp,
+           character_power(c.id) as power, c.boss_kills, c.kills,
+           t.emoji || ' ' || t.name as title
+    from characters c
+    join classes cl on cl.id = c.class_id
+    left join titles t on t.key = c.title_key
+  )
+  select (row_number() over (order by
+            case p_sort when 'power' then b.power when 'boss_kills' then b.boss_kills else b.level end desc,
+            case p_sort when 'level' then b.exp else b.level end desc,
+            b.name))::int,
+         b.id, b.name, b.class_key, b.class_name, b.level, b.power, b.boss_kills, b.kills, b.title
+  from base b
+  order by 1
+  limit 50;
+$$;
+
+-- 8. Nộm tập -----------------------------------------------------------------------------------
+-- 30 lượt đánh vào nộm máu vô hạn, không tốn AP/HP, không đổi gì trong DB.
+-- p_armored: nộm bọc giáp có DEF như quái cùng cấp ×1.3.
+create or replace function public.training_dummy(p_character_id uuid, p_armored boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int;
+  v_atk int; v_crit numeric; v_lifesteal numeric;
+  v_a1_name text; v_a1_power numeric; v_a2_name text; v_a2_power numeric;
+  v_dmg_reduction numeric; v_skill_lifesteal numeric; v_skill_crit numeric;
+  v_effects text[];
+  v_def int;
+  v_log jsonb;
+  v_hits jsonb;
+begin
+  select c.level into v_level from characters c where c.id = p_character_id and c.user_id = auth.uid();
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select gs.atk, gs.crit_bonus, gs.lifesteal_bonus into v_atk, v_crit, v_lifesteal
+  from get_character_stats(p_character_id) gs;
+
+  select cs.out_a1_name, cs.out_a1_power, cs.out_a2_name, cs.out_a2_power,
+         cs.out_dmg_reduction, cs.out_lifesteal, cs.out_crit
+    into v_a1_name, v_a1_power, v_a2_name, v_a2_power,
+         v_dmg_reduction, v_skill_lifesteal, v_skill_crit
+  from get_combat_skills(p_character_id) cs;
+
+  v_effects := get_character_effects(p_character_id);
+  v_def := case when p_armored then round(0.8 * v_level * 1.3)::int else 0 end;
+
+  select f.out_log into v_log
+  from simulate_fight(
+    v_atk, 0, 1000000000, 1000000000,
+    least(0.75, v_crit + v_skill_crit), 0, 0,
+    v_a1_name, v_a1_power, v_a2_name, v_a2_power,
+    'Nộm Tập', 2000000000, 0, v_def,
+    1, true, v_effects
+  ) f;
+
+  select coalesce(jsonb_agg(e), '[]'::jsonb) into v_hits
+  from jsonb_array_elements(v_log) e where e->>'actor' = 'character';
+
+  return jsonb_build_object(
+    'turns', 30,
+    'dummy_def', v_def,
+    'total', (select coalesce(sum((e->>'damage')::int), 0) from jsonb_array_elements(v_hits) e),
+    'hits', jsonb_array_length(v_hits),
+    'max_hit', (select coalesce(max((e->>'damage')::int), 0) from jsonb_array_elements(v_hits) e),
+    'crits', (select count(*) from jsonb_array_elements(v_hits) e where (e->>'crit')::boolean),
+    'doubles', (select count(*) from jsonb_array_elements(v_hits) e where (e->>'double')::boolean),
+    'atk', v_atk,
+    'crit_chance', least(0.75, v_crit + v_skill_crit),
+    'effects', to_jsonb(v_effects),
+    'log', v_hits
+  );
+end;
+$$;
+
+-- 9. Nhiệm vụ hằng ngày -----------------------------------------------------------------------
+-- 3 nhiệm vụ khác loại mỗi ngày (theo giờ Việt Nam), tạo lười khi cần.
+create table if not exists daily_quests (
+  character_id  uuid not null references characters(id) on delete cascade,
+  quest_date    date not null,
+  quests        jsonb not null,           -- [{type, target, label, progress, claimed}]
+  bonus_claimed boolean not null default false,
+  primary key (character_id, quest_date)
+);
+
+alter table daily_quests enable row level security;
+drop policy if exists "own daily_quests select" on daily_quests;
+create policy "own daily_quests select" on daily_quests
+  for select using (exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid()));
+grant select on table daily_quests to authenticated;
+
+create or replace function public.vn_today()
+returns date
+language sql
+stable
+as $$ select (now() at time zone 'Asia/Ho_Chi_Minh')::date; $$;
+
+create or replace function public.ensure_daily_quests(p_character_id uuid)
+returns void
+language plpgsql
+set search_path = 'public'
+as $$
+begin
+  insert into daily_quests (character_id, quest_date, quests)
+  select p_character_id, vn_today(), jsonb_agg(jsonb_build_object(
+           'type', q.type, 'target', q.target, 'label', q.label, 'progress', 0, 'claimed', false))
+  from (
+    -- mỗi loại lấy 1 mức ngẫu nhiên, rồi chọn ngẫu nhiên 3 loại khác nhau
+    select per_type.* from (
+      select distinct on (p.type) p.type, p.target, p.label
+      from (values
+        ('kills', 30, 'Hạ 30 quái'), ('kills', 60, 'Hạ 60 quái'), ('kills', 100, 'Hạ 100 quái'),
+        ('boss', 1, 'Hạ 1 boss'), ('boss', 3, 'Hạ 3 boss'),
+        ('explore', 2, 'Đi thám hiểm 2 lần'), ('explore', 4, 'Đi thám hiểm 4 lần'),
+        ('dungeon', 1, 'Thắng 1 tầng dungeon'), ('dungeon', 3, 'Thắng 3 tầng dungeon'),
+        ('enchant', 1, 'Cường hóa trang bị 1 lần'),
+        ('convert', 1, 'Rã hoặc ghép nguyên liệu 1 lần')
+      ) as p(type, target, label)
+      order by p.type, random()
+    ) per_type
+    order by random()
+    limit 3
+  ) q
+  on conflict (character_id, quest_date) do nothing;
+end;
+$$;
+
+create or replace function public.track_quest(p_character_id uuid, p_type text, p_amount int)
+returns void
+language plpgsql
+set search_path = 'public'
+as $$
+begin
+  if coalesce(p_amount, 0) <= 0 then return; end if;
+  perform ensure_daily_quests(p_character_id);
+
+  update daily_quests dq
+  set quests = (
+    select jsonb_agg(case when q->>'type' = p_type
+                          then jsonb_set(q, '{progress}', to_jsonb(least((q->>'target')::int, (q->>'progress')::int + p_amount)))
+                          else q end order by ord)
+    from jsonb_array_elements(dq.quests) with ordinality as a(q, ord)
+  )
+  where dq.character_id = p_character_id and dq.quest_date = vn_today();
+end;
+$$;
+
+revoke execute on function public.ensure_daily_quests(uuid) from public, anon, authenticated;
+revoke execute on function public.track_quest(uuid, text, int) from public, anon, authenticated;
+revoke execute on function public.award_titles(uuid) from public, anon, authenticated;
+
+-- Thưởng 1 nhiệm vụ theo level: vàng 40 + 8×level, 2-4 nguyên liệu hợp level
+create or replace function public.get_daily_quests(p_character_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int;
+  v_row daily_quests%rowtype;
+begin
+  select c.level into v_level from characters c where c.id = p_character_id and c.user_id = auth.uid();
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  perform ensure_daily_quests(p_character_id);
+  select * into v_row from daily_quests dq where dq.character_id = p_character_id and dq.quest_date = vn_today();
+
+  return jsonb_build_object(
+    'date', v_row.quest_date,
+    'quests', v_row.quests,
+    'bonus_claimed', v_row.bonus_claimed,
+    'reward_gold', 40 + 8 * v_level,
+    'reward_material', (select jsonb_build_object('key', i.key, 'name', i.name, 'icon', i.icon)
+                        from items i where i.id = material_for_level(v_level)),
+    'bonus_gold', 100 + 10 * v_level,
+    'bonus_item', (select jsonb_build_object('key', i.key, 'name', i.name, 'icon', i.icon)
+                   from items i where i.key = 'potion_ap_large')
+  );
+end;
+$$;
+
+create or replace function public.claim_daily_quest(p_character_id uuid, p_index int)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int;
+  v_quests jsonb;
+  v_q jsonb;
+begin
+  select c.level into v_level from characters c
+  where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select dq.quests into v_quests from daily_quests dq
+  where dq.character_id = p_character_id and dq.quest_date = vn_today() for update;
+
+  v_q := v_quests -> p_index;
+  if v_q is null then raise exception 'Không tìm thấy nhiệm vụ'; end if;
+  if (v_q->>'claimed')::boolean then raise exception 'Đã nhận thưởng nhiệm vụ này'; end if;
+  if (v_q->>'progress')::int < (v_q->>'target')::int then raise exception 'Chưa hoàn thành nhiệm vụ'; end if;
+
+  update daily_quests dq set quests = jsonb_set(dq.quests, array[p_index::text, 'claimed'], 'true'::jsonb)
+  where dq.character_id = p_character_id and dq.quest_date = vn_today();
+
+  update characters set gold = gold + 40 + 8 * v_level where id = p_character_id;
+  perform add_stack(p_character_id, material_for_level(v_level), 2 + floor(random() * 3)::int);
+end;
+$$;
+
+create or replace function public.claim_daily_bonus(p_character_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int;
+  v_row daily_quests%rowtype;
+begin
+  select c.level into v_level from characters c
+  where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select * into v_row from daily_quests dq
+  where dq.character_id = p_character_id and dq.quest_date = vn_today() for update;
+
+  if v_row.bonus_claimed then raise exception 'Đã nhận quà hoàn thành hôm nay'; end if;
+  if exists (select 1 from jsonb_array_elements(v_row.quests) q where not (q->>'claimed')::boolean) then
+    raise exception 'Cần nhận thưởng đủ 3 nhiệm vụ trước';
+  end if;
+
+  update daily_quests dq set bonus_claimed = true
+  where dq.character_id = p_character_id and dq.quest_date = vn_today();
+
+  update characters c
+  set gold = c.gold + 100 + 10 * v_level, daily_bonus_count = c.daily_bonus_count + 1
+  where c.id = p_character_id;
+
+  perform add_stack(p_character_id, (select i.id from items i where i.key = 'potion_ap_large'), 1);
+  perform award_titles(p_character_id);
+end;
+$$;

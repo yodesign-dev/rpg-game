@@ -4,6 +4,7 @@ import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
+import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
 import BottomNav from '../BottomNav'
 import InventoryManager, { type InventoryTab } from './InventoryManager'
 
@@ -44,10 +45,11 @@ export default async function InventoryPage({
     { data: ingredientsRaw },
     { currentAp, currentHp: regenHp },
     stats,
+    { data: chainRaw },
   ] = await Promise.all([
     supabase
       .from('inventory')
-      .select('id, quantity, equipped, equip_slot, rarity, legendary_effect, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)')
+      .select(INVENTORY_SELECT)
       .eq('character_id', character.id),
     supabase
       .from('recipes')
@@ -57,6 +59,11 @@ export default async function InventoryPage({
       .select('recipe_id, quantity, item:items(id, key, name)'),
     applyRegen(supabase, character),
     getCharacterStats(supabase, character.id),
+    supabase
+      .from('items')
+      .select('id, key, name, icon, material_tier, sell_price')
+      .not('material_tier', 'is', null)
+      .order('material_tier'),
   ])
 
   const recipes = (recipesRaw ?? []).map((r: any) => ({
@@ -112,6 +119,7 @@ export default async function InventoryPage({
           maxAp={character.max_ap}
           recipes={recipes}
           initialTab={initialTab}
+          materialChain={(chainRaw ?? []) as MaterialInfo[]}
         />
       </div>
       <BottomNav />

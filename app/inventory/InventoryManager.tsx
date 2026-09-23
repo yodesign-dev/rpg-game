@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
+import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
 
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
@@ -114,6 +115,8 @@ type Item = {
   sell_price: number | null
   description: string | null
   icon: string | null
+  item_level: number
+  material_tier: number | null
 }
 
 type InventoryRow = {
@@ -128,6 +131,8 @@ type InventoryRow = {
   rolled_lifesteal: number
   rarity: string | null
   legendary_effect: string | null
+  locked: boolean
+  enchant_level: number
   items: Item
 }
 
@@ -156,6 +161,7 @@ export default function InventoryManager({
   maxAp,
   recipes,
   initialTab,
+  materialChain,
 }: {
   characterId: string
   characterName: string
@@ -171,6 +177,7 @@ export default function InventoryManager({
   maxAp: number
   recipes: Recipe[]
   initialTab: InventoryTab
+  materialChain: MaterialInfo[]
 }) {
   const [tab, setTabState] = useState<InventoryTab>(initialTab)
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -188,6 +195,9 @@ export default function InventoryManager({
   const [confirmSell, setConfirmSell] = useState(false)
   const [selling, setSelling] = useState(false)
   const [sellResult, setSellResult] = useState<string | null>(null)
+  // Panel mở rộng dưới 1 dòng: cường hóa (trang bị) hoặc rã/ghép (nguyên liệu)
+  const [openPanel, setOpenPanel] = useState<{ rowId: string; kind: 'enchant' | 'convert' } | null>(null)
+  const [actionMsg, setActionMsg] = useState<{ rowId: string; text: string; ok: boolean } | null>(null)
 
   async function useItem(row: InventoryRow) {
     setError(null)
@@ -311,22 +321,87 @@ export default function InventoryManager({
       )
     }
 
-    // Nguyên liệu bị trừ dần qua nhiều dòng inventory ở server theo cách
-    // không đoán trước chính xác được — tải lại danh sách túi đồ thay vì
-    // cố vá state cục bộ cho đúng.
-    const { data: fresh } = await supabase
-      .from('inventory')
-      .select(
-        'id, quantity, equipped, equip_slot, rarity, legendary_effect, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
-      )
-      .eq('character_id', characterId)
-
-    if (fresh) setRows(fresh as any)
-
+    await reloadRows()
     setPendingRecipeId(null)
   }
 
-  const sellable = rows.filter((r) => !r.equipped)
+  // Nguyên liệu bị trừ dần qua nhiều dòng inventory ở server theo cách
+  // không đoán trước chính xác được — tải lại danh sách túi đồ thay vì
+  // cố vá state cục bộ cho đúng.
+  async function reloadRows() {
+    const { data: fresh } = await createClient()
+      .from('inventory')
+      .select(INVENTORY_SELECT)
+      .eq('character_id', characterId)
+    if (fresh) setRows(fresh as unknown as InventoryRow[])
+  }
+
+  function countOf(itemId: string) {
+    return rows.filter((r) => r.items.id === itemId && !r.equipped).reduce((sum, r) => sum + r.quantity, 0)
+  }
+
+  async function toggleLock(row: InventoryRow) {
+    setError(null)
+    setPendingRowId(row.id)
+    const { data, error: rpcError } = await createClient().rpc('toggle_item_lock', {
+      p_character_id: characterId,
+      p_inventory_id: row.id,
+    })
+    setPendingRowId(null)
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+    setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, locked: data as boolean } : r)))
+  }
+
+  async function enchant(row: InventoryRow) {
+    setError(null)
+    setPendingRowId(row.id)
+    const { data, error: rpcError } = await createClient().rpc('enchant_item', {
+      p_character_id: characterId,
+      p_inventory_id: row.id,
+    })
+    setPendingRowId(null)
+    if (rpcError) {
+      setActionMsg({ rowId: row.id, text: rpcError.message, ok: false })
+      return
+    }
+    const res = (Array.isArray(data) ? data[0] : data) as { out_success: boolean; out_level: number; out_gold: number }
+    setLocalGold(res.out_gold)
+    setActionMsg({
+      rowId: row.id,
+      ok: res.out_success,
+      text: res.out_success
+        ? `Thành công! ${row.items.name} lên +${res.out_level}.`
+        : `Thất bại — mất nguyên liệu, vẫn giữ +${res.out_level}.`,
+    })
+    await reloadRows()
+  }
+
+  async function convert(row: InventoryRow, mode: 'combine' | 'break', times: number) {
+    setError(null)
+    setPendingRowId(row.id)
+    const { data, error: rpcError } = await createClient().rpc('convert_material', {
+      p_character_id: characterId,
+      p_item_id: row.items.id,
+      p_mode: mode,
+      p_times: times,
+    })
+    setPendingRowId(null)
+    if (rpcError) {
+      setActionMsg({ rowId: row.id, text: rpcError.message, ok: false })
+      return
+    }
+    const idx = materialChain.findIndex((m) => m.id === row.items.id)
+    const target = materialChain[mode === 'combine' ? idx + 1 : idx - 1]
+    const fee = (mode === 'combine' ? target.sell_price : row.items.sell_price ?? 0) * times
+    setLocalGold((g) => g - fee)
+    setActionMsg({ rowId: row.id, ok: true, text: `Nhận ${data} × ${target.name} (−${fee} vàng).` })
+    await reloadRows()
+  }
+
+  const sellable = rows.filter((r) => !r.equipped && !r.locked)
   const selectedRows = rows.filter((r) => selected.has(r.id))
   const selectedGold = selectedRows.reduce((sum, r) => sum + sellPriceOf(r), 0)
   const selectedHighTier = selectedRows.some((r) => (RARITY_RANK[tierOf(r)] ?? 0) >= 2)
@@ -667,13 +742,13 @@ export default function InventoryManager({
               return (
                 <div
                   key={row.id}
-                  onClick={sellMode && !row.equipped ? () => toggleRow(row.id) : undefined}
+                  onClick={sellMode && !row.equipped && !row.locked ? () => toggleRow(row.id) : undefined}
                   className={`rounded-sm border p-4 flex flex-wrap items-center justify-between gap-3
                     ${sellMode && selected.has(row.id)
                       ? 'border-[#e0b050]/70 bg-[#221c10]'
                       : row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2c261c] bg-[#17140f]'}
-                    ${sellMode && !row.equipped ? 'cursor-pointer' : ''}
-                    ${sellMode && row.equipped ? 'opacity-40' : ''}`}
+                    ${sellMode && !row.equipped && !row.locked ? 'cursor-pointer' : ''}
+                    ${sellMode && (row.equipped || row.locked) ? 'opacity-40' : ''}`}
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1 basis-56">
                     {sellMode && (
@@ -681,7 +756,7 @@ export default function InventoryManager({
                         type="checkbox"
                         aria-label={`Chọn bán ${item.name}`}
                         checked={selected.has(row.id)}
-                        disabled={row.equipped}
+                        disabled={row.equipped || row.locked}
                         onChange={() => toggleRow(row.id)}
                         onClick={(e) => e.stopPropagation()}
                         className="accent-[#e0b050] w-4 h-4 shrink-0"
@@ -708,6 +783,10 @@ export default function InventoryManager({
                           </span>
                         )}
                         {item.name}
+                        {row.enchant_level > 0 && (
+                          <span className={`${mono.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
+                        )}
+                        {row.locked && <span className="text-xs"> 🔒</span>}
                         {row.quantity > 1 && (
                           <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
                         )}
@@ -750,10 +829,43 @@ export default function InventoryManager({
 
                   {sellMode ? (
                     <span className={`${mono.className} text-xs shrink-0 ${row.equipped ? 'text-[#6b6249]' : 'text-[#e0b050]'}`}>
-                      {row.equipped ? 'Đang mặc' : `${sellPriceOf(row)} vàng`}
+                      {row.equipped ? 'Đang mặc' : row.locked ? 'Đã khóa' : `${sellPriceOf(row)} vàng`}
                     </span>
                   ) : (
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2 max-w-full">
+                    <button
+                      onClick={() => toggleLock(row)}
+                      disabled={isPending}
+                      title={row.locked ? 'Mở khóa' : 'Khóa — không bán được'}
+                      aria-label={row.locked ? 'Mở khóa' : 'Khóa'}
+                      className={`${mono.className} text-xs border px-2 py-2 rounded-sm disabled:opacity-30 ${
+                        row.locked
+                          ? 'border-[#e0b050]/70 bg-[#e0b050]/15 text-[#e0b050]'
+                          : 'border-[#2c261c] opacity-50 hover:opacity-100 hover:border-[#8a7f68]'
+                      }`}
+                    >
+                      {row.locked ? '🔒 Khóa' : '🔓'}
+                    </button>
+
+                    {(item.type === 'weapon' || item.type === 'armor') && (
+                      <button
+                        onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'enchant' ? null : { rowId: row.id, kind: 'enchant' }))}
+                        disabled={row.enchant_level >= 5}
+                        className={`${mono.className} text-xs border border-[#e0b050]/50 text-[#e0b050] px-2.5 py-2 rounded-sm disabled:opacity-30 hover:bg-[#e0b050]/10 whitespace-nowrap`}
+                      >
+                        {row.enchant_level >= 5 ? '🔨 Max' : '🔨 Cường hóa'}
+                      </button>
+                    )}
+
+                    {item.type === 'material' && item.material_tier != null && (
+                      <button
+                        onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'convert' ? null : { rowId: row.id, kind: 'convert' }))}
+                        className={`${mono.className} text-xs border border-[#8fb4c4]/50 text-[#8fb4c4] px-2.5 py-2 rounded-sm hover:bg-[#8fb4c4]/10 whitespace-nowrap`}
+                      >
+                        ⇅ Rã / Ghép
+                      </button>
+                    )}
+
                     {row.equipped && (
                       <button
                         onClick={() => unequip(row)}
@@ -814,6 +926,31 @@ export default function InventoryManager({
                       )
                     })()}
                   </div>
+                  )}
+
+                  {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'enchant' && (
+                    <EnchantPanel
+                      row={row}
+                      chain={materialChain}
+                      countOf={countOf}
+                      gold={localGold}
+                      pending={isPending}
+                      onEnchant={() => enchant(row)}
+                    />
+                  )}
+                  {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'convert' && (
+                    <ConvertPanel
+                      row={row}
+                      chain={materialChain}
+                      gold={localGold}
+                      pending={isPending}
+                      onConvert={(mode, times) => convert(row, mode, times)}
+                    />
+                  )}
+                  {actionMsg?.rowId === row.id && (
+                    <p className={`${mono.className} basis-full text-xs ${actionMsg.ok ? 'text-[#8fc4a8]' : 'text-[#c98787]'}`}>
+                      {actionMsg.text}
+                    </p>
                   )}
                 </div>
               )
@@ -975,5 +1112,150 @@ function QuickChip({
     >
       {children}
     </button>
+  )
+}
+
+type EnchantCost = {
+  out_mat: string
+  out_mat_qty: number
+  out_mat2: string | null
+  out_mat2_qty: number
+  out_gold: number
+  out_rate: number
+}
+
+// Chi phí bước cường hóa kế tiếp lấy từ RPC enchant_cost (cùng công thức server dùng)
+function EnchantPanel({
+  row,
+  chain,
+  countOf,
+  gold,
+  pending,
+  onEnchant,
+}: {
+  row: InventoryRow
+  chain: MaterialInfo[]
+  countOf: (itemId: string) => number
+  gold: number
+  pending: boolean
+  onEnchant: () => void
+}) {
+  const next = row.enchant_level + 1
+  const [cost, setCost] = useState<EnchantCost | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    createClient()
+      .rpc('enchant_cost', { p_item_level: row.items.item_level, p_next_level: next })
+      .then(({ data }) => {
+        const c = (Array.isArray(data) ? data[0] : data) as EnchantCost | undefined
+        if (!cancelled) setCost(c ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [row.items.item_level, next])
+
+  const mat = cost ? chain.find((m) => m.id === cost.out_mat) : null
+  const mat2 = cost?.out_mat2 ? chain.find((m) => m.id === cost.out_mat2) : null
+  const need = [
+    mat && cost ? { m: mat, qty: cost.out_mat_qty } : null,
+    mat2 && cost && cost.out_mat2_qty > 0 ? { m: mat2, qty: cost.out_mat2_qty } : null,
+  ].filter(Boolean) as { m: MaterialInfo; qty: number }[]
+  // Cùng 1 nguyên liệu có thể xuất hiện 2 lần (khi không có bậc trên) → cộng dồn khi kiểm tra
+  const enough =
+    !!cost &&
+    gold >= cost.out_gold &&
+    need.every((n) => countOf(n.m.id) >= need.filter((x) => x.m.id === n.m.id).reduce((a, x) => a + x.qty, 0))
+
+  return (
+    <div className={`${mono.className} basis-full rounded-sm border border-[#e0b050]/30 bg-[#0d0b09] p-3 text-[11px] space-y-2`}>
+      {!cost ? (
+        <p className="text-[#6b6249]">Đang tính chi phí…</p>
+      ) : (
+        <>
+          <p className="text-[#f1e6c8]">
+            Lên <b className="text-[#e0b050]">+{next}</b> · tỉ lệ{' '}
+            <b className={cost.out_rate < 1 ? 'text-[#e09595]' : 'text-[#8fc4a8]'}>{Math.round(cost.out_rate * 100)}%</b>
+            {cost.out_rate < 1 && <span className="text-[#8a7f68]"> (thất bại mất nguyên liệu, không tụt cấp)</span>}
+          </p>
+          <ul className="space-y-0.5">
+            {need.map((n, i) => (
+              <li key={i} className={countOf(n.m.id) >= n.qty ? 'text-[#a89b7f]' : 'text-[#c98787]'}>
+                {n.qty} × {n.m.name} <span className="text-[#6b6249]">(có {countOf(n.m.id)})</span>
+              </li>
+            ))}
+            <li className={gold >= cost.out_gold ? 'text-[#a89b7f]' : 'text-[#c98787]'}>
+              {cost.out_gold} vàng <span className="text-[#6b6249]">(có {gold})</span>
+            </li>
+          </ul>
+          <button
+            onClick={onEnchant}
+            disabled={!enough || pending}
+            className="border border-[#e0b050] bg-[#e0b050] text-[#100e0c] font-semibold px-3 py-1.5 rounded-sm disabled:opacity-30"
+          >
+            {pending ? 'Đang cường hóa…' : `Cường hóa +${next}`}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ConvertPanel({
+  row,
+  chain,
+  gold,
+  pending,
+  onConvert,
+}: {
+  row: InventoryRow
+  chain: MaterialInfo[]
+  gold: number
+  pending: boolean
+  onConvert: (mode: 'combine' | 'break', times: number) => void
+}) {
+  const [times, setTimes] = useState(1)
+  const idx = chain.findIndex((m) => m.id === row.items.id)
+  const up = chain[idx + 1]
+  const down = idx > 0 ? chain[idx - 1] : undefined
+  const have = row.quantity
+  const combineFee = up ? up.sell_price * times : 0
+  const breakFee = (row.items.sell_price ?? 0) * times
+
+  return (
+    <div className={`${mono.className} basis-full rounded-sm border border-[#8fb4c4]/30 bg-[#0d0b09] p-3 text-[11px] space-y-2`}>
+      <label className="flex items-center gap-2 text-[#a89b7f]">
+        Số lần
+        <input
+          type="number"
+          min={1}
+          value={times}
+          onChange={(e) => setTimes(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+          className="w-16 bg-[#17140f] border border-[#2c261c] rounded-sm px-2 py-1 text-[#f1e6c8]"
+        />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        {up && (
+          <button
+            onClick={() => onConvert('combine', times)}
+            disabled={pending || have < 3 * times || gold < combineFee}
+            className="border border-[#8fb4c4]/60 text-[#8fb4c4] px-3 py-1.5 rounded-sm disabled:opacity-30"
+          >
+            ⬆ Ghép {3 * times} → {times} {up.name} · {combineFee} vàng
+          </button>
+        )}
+        {down && (
+          <button
+            onClick={() => onConvert('break', times)}
+            disabled={pending || have < times || gold < breakFee}
+            className="border border-[#8a7f68] text-[#a89b7f] px-3 py-1.5 rounded-sm disabled:opacity-30"
+          >
+            ⬇ Rã {times} → {3 * times} {down.name} · {breakFee} vàng
+          </button>
+        )}
+      </div>
+      {!up && <p className="text-[#6b6249]">Đây là nguyên liệu cao nhất, chỉ rã được.</p>}
+    </div>
   )
 }

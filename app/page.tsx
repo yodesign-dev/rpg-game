@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
@@ -32,7 +33,7 @@ export default async function CharacterPage() {
 
   const { data: character } = await supabase
     .from('characters')
-    .select('*, classes(*)')
+    .select('*, classes(*), title:titles(name, emoji)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -54,7 +55,7 @@ export default async function CharacterPage() {
     getCharacterStats(supabase, character.id),
     supabase
       .from('activity_feed')
-      .select('id, character_id, character_name, kind, payload, created_at')
+      .select('id, character_id, character_name, character_title, kind, payload, created_at')
       .order('created_at', { ascending: false })
       .limit(15),
   ])
@@ -126,6 +127,14 @@ export default async function CharacterPage() {
                   {cls.name.toUpperCase()}
                 </span>
               </div>
+              <Link
+                href="/titles"
+                className={`${mono.className} inline-block mt-2 text-xs text-[#f0c060] hover:underline`}
+              >
+                {character.title
+                  ? `${(character.title as { emoji: string }).emoji} ${(character.title as { name: string }).name}`
+                  : '🎖️ Chọn danh hiệu'}
+              </Link>
             </div>
           </div>
 
@@ -166,6 +175,23 @@ export default async function CharacterPage() {
 
         <ExploreCta />
         <DungeonCta />
+
+        <div className={`${mono.className} grid grid-cols-3 gap-2 mb-4`}>
+          {[
+            { href: '/ranking', icon: '🏆', label: 'Xếp hạng' },
+            { href: '/titles', icon: '🎖️', label: 'Danh hiệu' },
+            { href: '/training', icon: '🎯', label: 'Nộm tập' },
+          ].map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className="rounded-[16px] bg-white/[0.045] border border-white/[0.09] py-3 text-center hover:bg-white/[0.08]"
+            >
+              <div className="text-xl">{l.icon}</div>
+              <div className="text-xs text-[#c9c4d4] mt-1">{l.label}</div>
+            </Link>
+          ))}
+        </div>
 
         <StatAllocator
           characterId={character.id}
