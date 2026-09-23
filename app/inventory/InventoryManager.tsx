@@ -28,21 +28,26 @@ const SLOT_ICON: Record<string, string> = {
   belt: '🎗️',
   amulet: '📿',
   boot: '👢',
+  ring_1: '💍',
+  ring_2: '💍',
 }
 
 // Bố cục kiểu "paper doll": nhân vật ở giữa, trang bị chia 2 cột trái/phải
-// quanh nhân vật, giống layout Equip Info của các ARPG.
+// quanh nhân vật, giống layout Equip Info của các ARPG. ring_1/ring_2 là 2
+// khớp nhẫn độc lập (giống l_arm/r_arm) — mỗi khớp mặc 1 chiếc nhẫn riêng.
 const LEFT_SLOTS = [
   { key: 'head', label: 'Đầu' },
   { key: 'l_arm', label: 'Tay Trái' },
   { key: 'chest', label: 'Ngực' },
   { key: 'belt', label: 'Thắt Lưng' },
+  { key: 'ring_1', label: 'Nhẫn 1' },
 ] as const
 
 const RIGHT_SLOTS = [
   { key: 'r_arm', label: 'Tay Phải' },
   { key: 'amulet', label: 'Bùa' },
   { key: 'boot', label: 'Giày' },
+  { key: 'ring_2', label: 'Nhẫn 2' },
 ] as const
 
 const TYPE_LABEL: Record<string, string> = {
@@ -321,7 +326,8 @@ export default function InventoryManager({
               const isPending = pendingRowId === row.id
               const rarityClass = RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common
               const isArmItem = item.slot === 'weapon' || item.slot === 'shield'
-              const isSingleSlot = !!item.slot && !isArmItem
+              const isRingItem = item.slot === 'ring'
+              const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
               const btnBase = `${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                 disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`
 
@@ -389,6 +395,17 @@ export default function InventoryManager({
                         </button>
                         <button onClick={() => equip(row, 'r_arm')} disabled={isPending} className={btnBase}>
                           {isPending ? '…' : 'Phải'}
+                        </button>
+                      </>
+                    )}
+
+                    {!row.equipped && isRingItem && (
+                      <>
+                        <button onClick={() => equip(row, 'ring_1')} disabled={isPending} className={btnBase}>
+                          {isPending ? '…' : 'Nhẫn 1'}
+                        </button>
+                        <button onClick={() => equip(row, 'ring_2')} disabled={isPending} className={btnBase}>
+                          {isPending ? '…' : 'Nhẫn 2'}
                         </button>
                       </>
                     )}
