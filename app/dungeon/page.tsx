@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
-import { applyApRegen } from '@/lib/ap-regen'
+import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
 import FloorList from './FloorList'
@@ -29,13 +29,13 @@ export default async function DungeonPage() {
 
   if (!character) redirect('/create-character')
 
-  const [{ data: dungeon }, { currentAp }, stats] = await Promise.all([
+  const [{ data: dungeon }, { currentAp, currentHp }, stats] = await Promise.all([
     supabase
       .from('dungeons')
       .select('*, dungeon_floors(*)')
       .eq('chapter_number', character.current_chapter)
       .maybeSingle(),
-    applyApRegen(supabase, character),
+    applyRegen(supabase, character),
     getCharacterStats(supabase, character.id),
   ])
 
@@ -87,7 +87,7 @@ export default async function DungeonPage() {
               characterId={character.id}
               floors={floors}
               highestCleared={highestCleared}
-              currentHp={character.current_hp ?? maxHp}
+              currentHp={Math.min(maxHp, currentHp ?? maxHp)}
               maxHp={maxHp}
               currentAp={currentAp}
               apCost={dungeon.ap_cost}

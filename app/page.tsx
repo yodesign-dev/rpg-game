@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
-import { applyApRegen } from '@/lib/ap-regen'
+import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import ClassArt from './ClassArt'
 import SettingsMenu from './SettingsMenu'
 import BottomNav from './BottomNav'
 import DungeonCta from './DungeonCta'
+import ExploreCta from './ExploreCta'
 import StatAllocator from './StatAllocator'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
@@ -45,13 +46,13 @@ export default async function CharacterPage() {
     main_stat: string
   }
 
-  const [{ currentAp, nextApMinutes }, stats] = await Promise.all([
-    applyApRegen(supabase, character),
-    getCharacterStats(supabase, character.id),
-  ])
+  // Hồi phục trước rồi mới đọc chỉ số (apply_regen ghi HP/AP mới vào DB)
+  const regen = await applyRegen(supabase, character)
+  const { currentAp, nextApMinutes } = regen
+  const stats = await getCharacterStats(supabase, character.id)
 
   const maxHp = stats.maxHp
-  const currentHp = character.current_hp ?? maxHp
+  const currentHp = Math.min(maxHp, regen.currentHp ?? maxHp)
 
   const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
   const hpPct = Math.min(100, Math.round((currentHp / maxHp) * 100))
@@ -136,6 +137,7 @@ export default async function CharacterPage() {
               label="HP"
               value={`${currentHp} / ${maxHp}`}
               pct={hpPct}
+              note={currentHp < maxHp ? `Hồi ${Math.max(1, Math.ceil(maxHp * 0.02))} HP mỗi phút` : undefined}
               gradient="linear-gradient(90deg,#b06fd8,#e086b0)"
               glow="rgba(224,134,176,.55)"
               icon={<path d="M12 20 4 13a5 5 0 0 1 7-7l1 1 1-1a5 5 0 0 1 7 7Z" strokeLinejoin="round" strokeLinecap="round" />}
@@ -154,6 +156,7 @@ export default async function CharacterPage() {
           </div>
         </div>
 
+        <ExploreCta />
         <DungeonCta />
 
         <StatAllocator

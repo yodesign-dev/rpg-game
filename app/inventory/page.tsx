@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
-import { applyApRegen } from '@/lib/ap-regen'
+import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
 import InventoryManager from './InventoryManager'
@@ -33,7 +33,7 @@ export default async function InventoryPage() {
     { data: inventory, error: inventoryError },
     { data: recipesRaw },
     { data: ingredientsRaw },
-    { currentAp },
+    { currentAp, currentHp: regenHp },
     stats,
   ] = await Promise.all([
     supabase
@@ -46,7 +46,7 @@ export default async function InventoryPage() {
     supabase
       .from('recipe_ingredients')
       .select('recipe_id, quantity, item:items(id, key, name)'),
-    applyApRegen(supabase, character),
+    applyRegen(supabase, character),
     getCharacterStats(supabase, character.id),
   ])
 
@@ -67,7 +67,7 @@ export default async function InventoryPage() {
   // tự cộng thêm phản ứng theo state trang bị hiện tại (kể cả affix roll) để
   // cập nhật ngay khi mặc/gỡ đồ mà không cần tải lại trang.
   const { baseMaxHp, baseAtk, baseDef, baseSpd } = stats
-  const currentHp = character.current_hp ?? stats.maxHp
+  const currentHp = Math.min(stats.maxHp, regenHp ?? stats.maxHp)
 
   return (
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
