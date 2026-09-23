@@ -13,6 +13,38 @@ const RARITY_COLOR: Record<string, string> = {
   legendary: 'text-[#e0b050]',
 }
 
+const RARITY_BORDER: Record<string, string> = {
+  common: 'border-[#4a4230]',
+  rare: 'border-[#4a6b7a]',
+  epic: 'border-[#6b4a7a]',
+  legendary: 'border-[#8a6a1f]',
+}
+
+const SLOT_ICON: Record<string, string> = {
+  head: '🪖',
+  l_arm: '⚔️',
+  r_arm: '⚔️',
+  chest: '🎽',
+  belt: '🎗️',
+  amulet: '📿',
+  boot: '👢',
+}
+
+// Bố cục kiểu "paper doll": nhân vật ở giữa, trang bị chia 2 cột trái/phải
+// quanh nhân vật, giống layout Equip Info của các ARPG.
+const LEFT_SLOTS = [
+  { key: 'head', label: 'Đầu' },
+  { key: 'l_arm', label: 'Tay Trái' },
+  { key: 'chest', label: 'Ngực' },
+  { key: 'belt', label: 'Thắt Lưng' },
+] as const
+
+const RIGHT_SLOTS = [
+  { key: 'r_arm', label: 'Tay Phải' },
+  { key: 'amulet', label: 'Bùa' },
+  { key: 'boot', label: 'Giày' },
+] as const
+
 const TYPE_LABEL: Record<string, string> = {
   weapon: 'VŨ KHÍ',
   armor: 'GIÁP',
@@ -21,19 +53,6 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 const TYPE_ORDER = ['weapon', 'armor', 'consumable', 'material']
-
-// 7 khớp trang bị trên nhân vật. l_arm/r_arm là 2 khớp tay độc lập — vũ khí/
-// khiên 1 tay chiếm đúng 1 khớp, vũ khí 2 tay (item.hand === 'two_hand')
-// chiếm cả hai cùng lúc (equip_slot lưu 'both_arms' cho trường hợp đó).
-const EQUIP_SLOTS = [
-  { key: 'head', label: 'Đầu' },
-  { key: 'l_arm', label: 'Tay Trái' },
-  { key: 'r_arm', label: 'Tay Phải' },
-  { key: 'chest', label: 'Ngực' },
-  { key: 'belt', label: 'Thắt Lưng' },
-  { key: 'amulet', label: 'Bùa' },
-  { key: 'boot', label: 'Giày' },
-] as const
 
 type Item = {
   id: string
@@ -61,14 +80,24 @@ type InventoryRow = {
 
 export default function InventoryManager({
   characterId,
+  characterName,
+  classIcon,
   items,
   currentHp,
   maxHp,
+  baseAtk,
+  baseDef,
+  baseSpd,
 }: {
   characterId: string
+  characterName: string
+  classIcon: string | null
   items: InventoryRow[]
   currentHp: number
   maxHp: number
+  baseAtk: number
+  baseDef: number
+  baseSpd: number
 }) {
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
@@ -184,55 +213,93 @@ export default function InventoryManager({
     rows: rows.filter((r) => r.items.type === type),
   })).filter((g) => g.rows.length > 0)
 
+  const equippedRows = rows.filter((r) => r.equipped)
+  const totalAtk = baseAtk + equippedRows.reduce((sum, r) => sum + r.items.bonus_atk, 0)
+  const totalDef = baseDef + equippedRows.reduce((sum, r) => sum + r.items.bonus_def, 0)
+
+  function findEquipped(slotKey: string) {
+    return slotKey === 'l_arm' || slotKey === 'r_arm'
+      ? equippedRows.find((r) => r.equip_slot === slotKey || r.equip_slot === 'both_arms')
+      : equippedRows.find((r) => r.equip_slot === slotKey)
+  }
+
+  function SlotBox({ slotKey, label }: { slotKey: string; label: string }) {
+    const row = findEquipped(slotKey)
+
+    if (!row) {
+      return (
+        <div className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border border-dashed border-[#2c261c]
+          flex flex-col items-center justify-center gap-0.5 opacity-50 shrink-0">
+          <span className="text-lg">{SLOT_ICON[slotKey]}</span>
+          <span className={`${mono.className} text-[8px] text-[#6b6249]`}>{label}</span>
+        </div>
+      )
+    }
+
+    const item = row.items
+    return (
+      <div
+        title={item.name}
+        className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+          bg-[#17140f] flex flex-col items-center justify-center gap-0.5 px-1 shrink-0`}
+      >
+        <span className="text-lg">{SLOT_ICON[slotKey]}</span>
+        <span
+          className={`${mono.className} text-[8px] text-center leading-tight line-clamp-2
+            ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}
+        >
+          {item.name}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
-      <div className={`${mono.className} text-center text-xs text-[#6b6249] -mt-4`}>
-        HP hiện tại: {localHp} / {maxHp}
-      </div>
-
       {error && (
         <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
       )}
 
       <section>
-        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
-          ĐANG TRANG BỊ
+        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3 text-center`}>
+          TRANG BỊ
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {EQUIP_SLOTS.map(({ key, label }) => {
-            const equippedRow =
-              key === 'l_arm' || key === 'r_arm'
-                ? rows.find((r) => r.equipped && (r.equip_slot === key || r.equip_slot === 'both_arms'))
-                : rows.find((r) => r.equipped && r.equip_slot === key)
-            const isPending = !!equippedRow && pendingRowId === equippedRow.id
+        <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-4 sm:p-5">
+          <div className="flex items-start justify-center gap-2 sm:gap-4">
+            <div className="flex flex-col gap-2">
+              {LEFT_SLOTS.map((s) => (
+                <SlotBox key={s.key} slotKey={s.key} label={s.label} />
+              ))}
+            </div>
 
-            return (
-              <div key={key} className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3">
-                <p className={`${mono.className} text-[10px] tracking-widest text-[#6b6249] mb-1.5`}>
-                  {label}
-                </p>
-                {equippedRow ? (
-                  <>
-                    <p className={`text-sm ${RARITY_COLOR[equippedRow.items.rarity] ?? RARITY_COLOR.common}`}>
-                      {equippedRow.items.name}
-                      {equippedRow.equip_slot === 'both_arms' && (
-                        <span className={`${mono.className} text-[10px] text-[#6b6249]`}> (2 tay)</span>
-                      )}
-                    </p>
-                    <button
-                      onClick={() => unequip(equippedRow)}
-                      disabled={isPending}
-                      className={`${mono.className} text-[10px] text-[#c98787] hover:text-[#f1e6c8] mt-1 disabled:opacity-30`}
-                    >
-                      {isPending ? '…' : 'Gỡ'}
-                    </button>
-                  </>
-                ) : (
-                  <p className={`${mono.className} text-xs text-[#4a4230]`}>Trống</p>
-                )}
+            <div className="flex-1 flex flex-col items-center gap-2 pt-2 min-w-0">
+              <div className="text-5xl sm:text-6xl">{classIcon}</div>
+              <p className={`${mono.className} text-xs text-[#f1e6c8] text-center truncate max-w-full`}>
+                {characterName}
+              </p>
+              <div className="w-full max-w-[140px] h-1.5 bg-[#2c261c] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#8fc4a8]"
+                  style={{ width: `${Math.min(100, Math.round((localHp / maxHp) * 100))}%` }}
+                />
               </div>
-            )
-          })}
+              <p className={`${mono.className} text-[10px] text-[#8a7f68]`}>
+                HP {localHp} / {maxHp}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {RIGHT_SLOTS.map((s) => (
+                <SlotBox key={s.key} slotKey={s.key} label={s.label} />
+              ))}
+            </div>
+          </div>
+
+          <div className={`${mono.className} mt-4 pt-3 border-t border-[#2c261c] flex items-center justify-around text-xs text-[#a89b7f]`}>
+            <span>⚔️ {totalAtk}</span>
+            <span>🛡️ {totalDef}</span>
+            <span>💨 {baseSpd}</span>
+          </div>
         </div>
       </section>
 
