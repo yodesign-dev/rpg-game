@@ -45,6 +45,18 @@ function sellPriceOf(row: InventoryRow) {
   return Math.round(base * 1.5 ** steps * row.quantity)
 }
 
+// Điểm 1 món — cùng trọng số với inventory_item_score / character_power ở server
+function itemScore(row: InventoryRow) {
+  const it = row.items
+  return (
+    (it.bonus_atk + row.rolled_atk) * 2 +
+    (it.bonus_def + row.rolled_def) * 1.5 +
+    (it.bonus_hp + row.rolled_hp) * 0.25 +
+    (row.rolled_crit + row.rolled_lifesteal) * 400 +
+    (row.legendary_effect ? 60 : 0)
+  )
+}
+
 // Chế tạo có "tăng tỉ lệ": tốn gấp đôi vàng, tối thiểu 50 — khớp craft_item
 function boostCost(goldCost: number) {
   return Math.max(50, goldCost * 2)
@@ -340,6 +352,44 @@ export default function InventoryManager({
     return rows.filter((r) => r.items.id === itemId && !r.equipped).reduce((sum, r) => sum + r.quantity, 0)
   }
 
+  const [autoMsg, setAutoMsg] = useState<string | null>(null)
+
+  async function autoEquip() {
+    setError(null)
+    setAutoMsg(null)
+    setPendingRowId('auto')
+    const { data, error: rpcError } = await createClient().rpc('auto_equip_best', { p_character_id: characterId })
+    setPendingRowId(null)
+    if (rpcError) return setError(rpcError.message)
+    const res = data as { changed: number; power_before: number; power_after: number }
+    setAutoMsg(
+      res.changed === 0
+        ? 'Đồ đang mặc đã là tốt nhất rồi.'
+        : `Đã thay ${res.changed} món · Lực chiến ${res.power_before} → ${res.power_after}`
+    )
+    await reloadRows()
+  }
+
+  // Món chưa mặc có mạnh hơn món đang ở ô tương ứng không (để gắn nhãn ▲)
+  function isUpgrade(row: InventoryRow) {
+    if (row.equipped || (row.items.type !== 'weapon' && row.items.type !== 'armor') || !row.items.slot) return false
+    const at = (slot: string) => {
+      const r = rows.find((x) => x.equipped && x.equip_slot === slot)
+      return r ? itemScore(r) : 0
+    }
+    const score = itemScore(row)
+    const slot = row.items.slot
+    if (slot === 'ring') return score > Math.min(at('ring_1'), at('ring_2'))
+    if (slot === 'weapon' || slot === 'shield') {
+      const both = rows.find((x) => x.equipped && x.equip_slot === 'both_arms')
+      if (row.items.hand === 'two_hand') return score > (both ? itemScore(both) : at('l_arm') + at('r_arm'))
+      return both ? score > itemScore(both) : score > Math.min(at('l_arm'), at('r_arm'))
+    }
+    return score > at(slot)
+  }
+
+  const upgradeCount = rows.filter(isUpgrade).length
+
   async function toggleLock(row: InventoryRow) {
     setError(null)
     setPendingRowId(row.id)
@@ -569,7 +619,7 @@ export default function InventoryManager({
               role="tab"
               aria-selected={tab === t.key}
               onClick={() => setTab(t.key)}
-              className={`rounded-sm border px-1 py-2 text-xs whitespace-nowrap transition-colors ${
+              className={`rounded-sm border px-1 py-2 text-xs whitespace-nowrap transition-colors outline-none focus-visible:ring-1 focus-visible:ring-[#8a7f68] ${
                 tab === t.key
                   ? 'border-[#8a7f68] bg-[#2c261c] text-[#f1e6c8]'
                   : 'border-[#2c261c] text-[#8a7f68] hover:text-[#a89b7f]'
@@ -587,16 +637,33 @@ export default function InventoryManager({
       )}
 
       {tab === 'equip' && (
+        <div className={`${mono.className} flex items-center justify-between gap-3`}>
+          <span className="text-[11px] text-[#6b6249]">
+            {upgradeCount ? `Có ${upgradeCount} món trong túi mạnh hơn đồ đang mặc` : 'Đang mặc đồ tốt nhất trong túi'}
+          </span>
+          <button
+              onClick={autoEquip}
+              disabled={pendingRowId === 'auto'}
+              className="text-xs border border-[#8fc4a8]/60 text-[#8fc4a8] px-3 py-2 rounded-sm hover:bg-[#8fc4a8]/10 disabled:opacity-40 whitespace-nowrap"
+            >
+              {pendingRowId === 'auto' ? '…' : `⚡ Tự mặc đồ tốt nhất${upgradeCount ? ` (${upgradeCount})` : ''}`}
+            </button>
+        </div>
+      )}
+      {tab === 'equip' && autoMsg && <p className={`${mono.className} text-xs text-[#8fc4a8]`}>{autoMsg}</p>}
+
+      {tab === 'equip' && (
       <section>
         <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-4 sm:p-5">
-          <div className="flex items-start justify-center gap-2 sm:gap-4">
+          {/* max-w-md: trên màn rộng không để 2 cột ô trang bị dạt ra 2 mép */}
+          <div className="mx-auto max-w-md flex items-stretch justify-center gap-2 sm:gap-4">
             <div className="flex flex-col gap-2">
               {LEFT_SLOTS.map((s) => (
                 <SlotBox key={s.key} slotKey={s.key} label={s.label} />
               ))}
             </div>
 
-            <div className="flex-1 flex flex-col items-center gap-2 pt-2 min-w-0">
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0">
               <div className="text-5xl sm:text-6xl">{classIcon}</div>
               <p className={`${mono.className} text-xs text-[#f1e6c8] text-center truncate max-w-full`}>
                 {characterName}
@@ -622,7 +689,7 @@ export default function InventoryManager({
             </div>
           </div>
 
-          <div className={`${mono.className} mt-4 pt-3 border-t border-[#2c261c] flex items-center justify-around text-xs text-[#a89b7f]`}>
+          <div className={`${mono.className} mx-auto max-w-md mt-4 pt-3 border-t border-[#2c261c] flex items-center justify-around text-xs text-[#a89b7f]`}>
             <span>⚔️ {totalAtk}</span>
             <span>🛡️ {totalDef}</span>
             <span>💨 {baseSpd}</span>
@@ -668,7 +735,17 @@ export default function InventoryManager({
       {tab === 'bag' && bagRows.length > 0 && (
         <div className={`${mono.className} space-y-3`}>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] text-[#6b6249]">Chọn nhiều món để bán một lần</span>
+            {!sellMode ? (
+              <button
+              onClick={autoEquip}
+              disabled={pendingRowId === 'auto'}
+              className="text-xs border border-[#8fc4a8]/60 text-[#8fc4a8] px-3 py-2 rounded-sm hover:bg-[#8fc4a8]/10 disabled:opacity-40 whitespace-nowrap"
+            >
+              {pendingRowId === 'auto' ? '…' : `⚡ Tự mặc đồ tốt nhất${upgradeCount ? ` (${upgradeCount})` : ''}`}
+            </button>
+            ) : (
+              <span className="text-[11px] text-[#6b6249]">Chọn nhiều món để bán một lần</span>
+            )}
             <button
               onClick={() => (sellMode ? exitSellMode() : (setSellMode(true), setSellResult(null)))}
               className={`text-xs border px-3 py-2 rounded-sm transition-colors ${
@@ -682,6 +759,7 @@ export default function InventoryManager({
           </div>
 
           {sellResult && <p className="text-xs text-[#8fc4a8]">{sellResult}</p>}
+          {autoMsg && <p className="text-xs text-[#8fc4a8]">{autoMsg}</p>}
 
           {sellMode && (
             <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3 space-y-2">
@@ -787,6 +865,11 @@ export default function InventoryManager({
                           <span className={`${mono.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
                         )}
                         {row.locked && <span className="text-xs"> 🔒</span>}
+                        {isUpgrade(row) && (
+                          <span className={`${mono.className} ml-1.5 text-[10px] text-[#8fc4a8] border border-[#8fc4a8]/50 rounded-sm px-1`}>
+                            ▲ Mạnh hơn
+                          </span>
+                        )}
                         {row.quantity > 1 && (
                           <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
                         )}
