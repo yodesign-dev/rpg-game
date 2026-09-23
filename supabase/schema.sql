@@ -296,25 +296,9 @@ create policy "own pets select" on character_pets
   for select using (
     exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
   );
-create policy "own pets insert" on character_pets
-  for insert with check (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own pets update" on character_pets
-  for update using (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
 
 create policy "own inventory select" on inventory
   for select using (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own inventory insert" on inventory
-  for insert with check (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own inventory update" on inventory
-  for update using (
     exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
   );
 
@@ -322,25 +306,9 @@ create policy "own dungeon_runs select" on dungeon_runs
   for select using (
     exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
   );
-create policy "own dungeon_runs insert" on dungeon_runs
-  for insert with check (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own dungeon_runs update" on dungeon_runs
-  for update using (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
 
 create policy "own character_quests select" on character_quests
   for select using (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own character_quests insert" on character_quests
-  for insert with check (
-    exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
-  );
-create policy "own character_quests update" on character_quests
-  for update using (
     exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid())
   );
 
@@ -1073,6 +1041,16 @@ begin
 
   if not found then raise exception 'Không tìm thấy tầng dungeon'; end if;
 
+  -- Chỉ được đánh tầng đã mở khóa: tầng 1, hoặc đã qua tầng ngay trước đó.
+  -- (Trước đây chỉ UI khóa → gọi RPC thẳng là đánh được boss tầng cuối.)
+  if v_floor_number > 1 and not exists (
+    select 1 from dungeon_runs dr
+    where dr.character_id = p_character_id and dr.dungeon_id = v_dungeon_id
+      and dr.status = 'cleared' and dr.current_floor >= v_floor_number - 1
+  ) then
+    raise exception 'Tầng này chưa mở khóa (cần qua tầng % trước)', v_floor_number - 1;
+  end if;
+
   if v_current_ap < v_ap_cost then
     raise exception 'Không đủ AP để vào tầng này (cần % AP)', v_ap_cost;
   end if;
@@ -1518,8 +1496,8 @@ $$;
 -- Trang bị đầy đủ: head/chest/belt/amulet/boot + 2 khớp tay riêng (l_arm/
 -- r_arm) cho vũ khí/khiên. Vũ khí 2 tay (ví dụ trượng của pháp sư) chiếm cả
 -- hai khớp tay cùng lúc và không thể mặc thêm khiên/vũ khí khác cho đến khi
--- gỡ ra. Trang bị/gỡ vẫn là update() trực tiếp từ client theo RLS
--- "own inventory update" sẵn có — không đụng gold/HP nên không cần RPC.
+-- gỡ ra. Trang bị/gỡ đi qua RPC equip_item / unequip_item (xem phần CHỐNG
+-- CHEAT) — server kiểm tra khớp hợp lệ.
 -- ============================================================================
 
 update items set slot = 'chest' where slot = 'body';
@@ -1669,6 +1647,181 @@ begin
   return query select v_current_ap, v_max_ap, v_next, coalesce(v_current_hp, v_max_hp), v_max_hp;
 end;
 $$;
+
+-- ============================================================================
+-- CHỐNG CHEAT: client chỉ ghi trực tiếp được characters (tên / auto_allocate_stats,
+-- xem guard_character_game_state) và character_equipped_skills (có trigger kiểm).
+-- Mọi thay đổi inventory / dungeon_runs / pets / quests đi qua RPC security definer.
+-- resolve_dungeon_floor kiểm tra tầng đã mở khóa.
+-- ============================================================================
+
+-- 1. add_experience ------------------------------------------------------------
+revoke execute on function public.add_experience(uuid, int) from public, anon, authenticated;
+
+-- 2 + 3. Bỏ quyền ghi trực tiếp -------------------------------------------------
+
+revoke insert, update, delete on table inventory, dungeon_runs, character_pets, character_quests
+  from anon, authenticated;
+
+-- Khớp trang bị hợp lệ cho từng loại item (dùng chung cho equip_item và dọn dữ liệu).
+create or replace function public.equip_slot_allowed(p_item_slot text, p_hand text, p_equip_slot text)
+returns boolean
+language sql
+immutable
+as $$
+  select case
+    when p_item_slot in ('weapon', 'shield') then
+      case when p_hand = 'two_hand' then p_equip_slot = 'both_arms'
+           else p_equip_slot in ('l_arm', 'r_arm') end
+    when p_item_slot = 'ring' then p_equip_slot in ('ring_1', 'ring_2')
+    when p_item_slot in ('head', 'chest', 'belt', 'amulet', 'boot') then p_equip_slot = p_item_slot
+    else false
+  end;
+$$;
+
+-- Mặc 1 món vào khớp p_slot, tự gỡ món đang chiếm khớp đó (vũ khí 2 tay chiếm
+-- cả l_arm lẫn r_arm). Trả về id các dòng vừa bị gỡ để client cập nhật UI.
+create or replace function public.equip_item(p_character_id uuid, p_inventory_id uuid, p_slot text)
+returns uuid[]
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_owner_user_id uuid;
+  v_item_slot text; v_item_hand text; v_item_type text;
+  v_clear text[];
+  v_unequipped uuid[];
+begin
+  select c.user_id into v_owner_user_id
+  from characters c where c.id = p_character_id for update;
+
+  if not found then raise exception 'Không tìm thấy nhân vật'; end if;
+
+  if v_owner_user_id is distinct from auth.uid() then
+    raise exception 'Không có quyền điều khiển nhân vật này';
+  end if;
+
+  select i.slot, i.hand, i.type into v_item_slot, v_item_hand, v_item_type
+  from inventory inv join items i on i.id = inv.item_id
+  where inv.id = p_inventory_id and inv.character_id = p_character_id
+  for update of inv;
+
+  if not found then raise exception 'Không tìm thấy vật phẩm trong túi đồ'; end if;
+
+  if v_item_type not in ('weapon', 'armor')
+     or not equip_slot_allowed(v_item_slot, v_item_hand, p_slot) then
+    raise exception 'Không thể mặc vật phẩm này vào vị trí đó';
+  end if;
+
+  v_clear := case
+    when p_slot = 'both_arms' then array['l_arm', 'r_arm', 'both_arms']
+    when p_slot in ('l_arm', 'r_arm') then array[p_slot, 'both_arms']
+    else array[p_slot]
+  end;
+
+  with cleared as (
+    update inventory inv
+    set equipped = false, equip_slot = null
+    where inv.character_id = p_character_id and inv.equipped
+      and inv.equip_slot = any(v_clear) and inv.id <> p_inventory_id
+    returning inv.id
+  )
+  select coalesce(array_agg(cleared.id), '{}') into v_unequipped from cleared;
+
+  update inventory inv
+  set equipped = true, equip_slot = p_slot
+  where inv.id = p_inventory_id;
+
+  return v_unequipped;
+end;
+$$;
+
+create or replace function public.unequip_item(p_character_id uuid, p_inventory_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_owner_user_id uuid;
+begin
+  select c.user_id into v_owner_user_id from characters c where c.id = p_character_id;
+
+  if not found then raise exception 'Không tìm thấy nhân vật'; end if;
+
+  if v_owner_user_id is distinct from auth.uid() then
+    raise exception 'Không có quyền điều khiển nhân vật này';
+  end if;
+
+  update inventory inv
+  set equipped = false, equip_slot = null
+  where inv.id = p_inventory_id and inv.character_id = p_character_id;
+
+  if not found then raise exception 'Không tìm thấy vật phẩm trong túi đồ'; end if;
+end;
+$$;
+
+-- 5. Skill trang bị: đúng class, đủ cấp, không trùng, tối đa 2 chủ động + 1 bị động.
+-- security definer để khóa được dòng characters (tránh 2 request song song cùng
+-- vượt giới hạn); quyền sở hữu nhân vật đã do RLS "own equipped skills insert" kiểm.
+create or replace function public.guard_equipped_skill()
+returns trigger
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_class_id uuid; v_level int;
+  v_skill_class_id uuid; v_unlock_level int; v_skill_type text;
+  v_count int; v_limit int;
+begin
+  select c.class_id, c.level into v_class_id, v_level
+  from characters c where c.id = new.character_id for update;
+
+  select s.class_id, s.unlock_level, s.skill_type into v_skill_class_id, v_unlock_level, v_skill_type
+  from skills s where s.id = new.skill_id;
+
+  if v_skill_class_id is distinct from v_class_id then
+    raise exception 'Kỹ năng này không thuộc class của bạn';
+  end if;
+
+  if v_level < v_unlock_level then
+    raise exception 'Cần đạt cấp % để dùng kỹ năng này', v_unlock_level;
+  end if;
+
+  if exists (
+    select 1 from character_equipped_skills ces
+    where ces.character_id = new.character_id and ces.skill_id = new.skill_id
+  ) then
+    raise exception 'Kỹ năng đã được trang bị';
+  end if;
+
+  select count(*) into v_count
+  from character_equipped_skills ces join skills s on s.id = ces.skill_id
+  where ces.character_id = new.character_id and s.skill_type = v_skill_type;
+
+  v_limit := case when v_skill_type = 'passive' then 1 else 2 end;
+
+  if v_count >= v_limit then
+    raise exception 'Đã đủ số kỹ năng % được trang bị', v_skill_type;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_equipped_skill on character_equipped_skills;
+create trigger guard_equipped_skill
+  before insert on character_equipped_skills
+  for each row execute function public.guard_equipped_skill();
+
+revoke update on table character_equipped_skills from anon, authenticated;
+
+-- Tên nhân vật: 1-20 ký tự như form tạo nhân vật (not valid: không kiểm dữ liệu cũ).
+alter table characters drop constraint if exists characters_name_length;
+alter table characters
+  add constraint characters_name_length check (char_length(btrim(name)) between 1 and 20) not valid;
 
 -- ============================================================================
 -- Ghi chú:

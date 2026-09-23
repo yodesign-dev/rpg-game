@@ -197,34 +197,13 @@ export default function InventoryManager({
     setError(null)
     setPendingRowId(row.id)
 
-    const supabase = createClient()
-
-    // Mặc 2 tay thì gỡ cả 2 khớp tay hiện có; mặc vào 1 khớp tay cụ thể thì
-    // vẫn phải gỡ vũ khí 2 tay đang chiếm cả hai khớp (nếu có).
-    const slotsToClear =
-      targetSlot === 'both_arms' ? ['l_arm', 'r_arm', 'both_arms'] : [targetSlot, 'both_arms']
-
-    const toUnequip = rows.filter(
-      (r) => r.id !== row.id && r.equipped && r.equip_slot && slotsToClear.includes(r.equip_slot)
-    )
-
-    if (toUnequip.length > 0) {
-      const { error: unequipError } = await supabase
-        .from('inventory')
-        .update({ equipped: false, equip_slot: null })
-        .in('id', toUnequip.map((r) => r.id))
-
-      if (unequipError) {
-        setError(unequipError.message)
-        setPendingRowId(null)
-        return
-      }
-    }
-
-    const { error: equipError } = await supabase
-      .from('inventory')
-      .update({ equipped: true, equip_slot: targetSlot })
-      .eq('id', row.id)
+    // Server kiểm tra khớp hợp lệ và tự gỡ món đang chiếm khớp đó (vũ khí 2
+    // tay chiếm cả hai khớp tay), trả về id các dòng vừa bị gỡ.
+    const { data, error: equipError } = await createClient().rpc('equip_item', {
+      p_character_id: characterId,
+      p_inventory_id: row.id,
+      p_slot: targetSlot,
+    })
 
     setPendingRowId(null)
 
@@ -233,10 +212,12 @@ export default function InventoryManager({
       return
     }
 
+    const unequippedIds = (data as string[] | null) ?? []
+
     setRows((prev) =>
       prev.map((r) => {
         if (r.id === row.id) return { ...r, equipped: true, equip_slot: targetSlot }
-        if (toUnequip.some((u) => u.id === r.id)) return { ...r, equipped: false, equip_slot: null }
+        if (unequippedIds.includes(r.id)) return { ...r, equipped: false, equip_slot: null }
         return r
       })
     )
@@ -246,11 +227,10 @@ export default function InventoryManager({
     setError(null)
     setPendingRowId(row.id)
 
-    const supabase = createClient()
-    const { error: updateError } = await supabase
-      .from('inventory')
-      .update({ equipped: false, equip_slot: null })
-      .eq('id', row.id)
+    const { error: updateError } = await createClient().rpc('unequip_item', {
+      p_character_id: characterId,
+      p_inventory_id: row.id,
+    })
 
     setPendingRowId(null)
 
