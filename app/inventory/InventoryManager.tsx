@@ -66,6 +66,7 @@ type Item = {
   type: string
   slot: string | null
   hand: string | null
+  school: string | null
   rarity: string
   bonus_atk: number
   bonus_def: number
@@ -80,7 +81,22 @@ type InventoryRow = {
   quantity: number
   equipped: boolean
   equip_slot: string | null
+  rolled_atk: number
+  rolled_def: number
+  rolled_hp: number
+  rolled_crit: number
+  rolled_lifesteal: number
   items: Item
+}
+
+type Recipe = {
+  id: string
+  name: string
+  goldCost: number
+  successRate: number
+  description: string | null
+  resultItem: { id: string; key: string; name: string; rarity: string }
+  ingredients: { item: { id: string; key: string; name: string }; quantity: number }[]
 }
 
 export default function InventoryManager({
@@ -89,25 +105,32 @@ export default function InventoryManager({
   classIcon,
   items,
   currentHp,
-  maxHp,
+  baseMaxHp,
   baseAtk,
   baseDef,
   baseSpd,
+  gold,
+  recipes,
 }: {
   characterId: string
   characterName: string
   classIcon: string | null
   items: InventoryRow[]
   currentHp: number
-  maxHp: number
+  baseMaxHp: number
   baseAtk: number
   baseDef: number
   baseSpd: number
+  gold: number
+  recipes: Recipe[]
 }) {
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [localHp, setLocalHp] = useState(currentHp)
+  const [localGold, setLocalGold] = useState(gold)
+  const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null)
+  const [craftResult, setCraftResult] = useState<string | null>(null)
 
   async function useItem(row: InventoryRow) {
     setError(null)
@@ -141,7 +164,7 @@ export default function InventoryManager({
   }
 
   // Mặc `row` vào khớp `targetSlot` ('head'|'chest'|'belt'|'amulet'|'boot'
-  // cho đồ 1 slot, hoặc 'l_arm'|'r_arm'|'both_arms' cho vũ khí/khiên).
+  // cho đồ 1 slot, hoặc 'l_arm'|'r_arm'|'both_arms'|'ring_1'|'ring_2').
   async function equip(row: InventoryRow, targetSlot: string) {
     setError(null)
     setPendingRowId(row.id)
@@ -213,14 +236,58 @@ export default function InventoryManager({
     )
   }
 
+  async function craft(recipe: Recipe) {
+    setError(null)
+    setCraftResult(null)
+    setPendingRecipeId(recipe.id)
+
+    const supabase = createClient()
+    const { data, error: rpcError } = await supabase.rpc('craft_item', {
+      p_character_id: characterId,
+      p_recipe_id: recipe.id,
+    })
+
+    if (rpcError) {
+      setError(rpcError.message)
+      setPendingRecipeId(null)
+      return
+    }
+
+    const res = (Array.isArray(data) ? data[0] : data) as
+      | { success: boolean; result_name: string | null; new_gold: number }
+      | undefined
+
+    if (res) {
+      setLocalGold(res.new_gold)
+      setCraftResult(
+        res.success ? `Thành công! Nhận được ${res.result_name}.` : 'Thất bại — nguyên liệu đã mất.'
+      )
+    }
+
+    // Nguyên liệu bị trừ dần qua nhiều dòng inventory ở server theo cách
+    // không đoán trước chính xác được — tải lại danh sách túi đồ thay vì
+    // cố vá state cục bộ cho đúng.
+    const { data: fresh } = await supabase
+      .from('inventory')
+      .select(
+        'id, quantity, equipped, equip_slot, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
+      )
+      .eq('character_id', characterId)
+
+    if (fresh) setRows(fresh as any)
+
+    setPendingRecipeId(null)
+  }
+
   const groups = TYPE_ORDER.map((type) => ({
     type,
     rows: rows.filter((r) => r.items.type === type),
   })).filter((g) => g.rows.length > 0)
 
   const equippedRows = rows.filter((r) => r.equipped)
-  const totalAtk = baseAtk + equippedRows.reduce((sum, r) => sum + r.items.bonus_atk, 0)
-  const totalDef = baseDef + equippedRows.reduce((sum, r) => sum + r.items.bonus_def, 0)
+  const totalAtk = baseAtk + equippedRows.reduce((sum, r) => sum + r.items.bonus_atk + r.rolled_atk, 0)
+  const totalDef = baseDef + equippedRows.reduce((sum, r) => sum + r.items.bonus_def + r.rolled_def, 0)
+  const totalMaxHp = baseMaxHp + equippedRows.reduce((sum, r) => sum + r.items.bonus_hp + r.rolled_hp, 0)
 
   function findEquipped(slotKey: string) {
     return slotKey === 'l_arm' || slotKey === 'r_arm'
@@ -285,11 +352,11 @@ export default function InventoryManager({
               <div className="w-full max-w-[140px] h-1.5 bg-[#2c261c] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#8fc4a8]"
-                  style={{ width: `${Math.min(100, Math.round((localHp / maxHp) * 100))}%` }}
+                  style={{ width: `${Math.min(100, Math.round((localHp / totalMaxHp) * 100))}%` }}
                 />
               </div>
               <p className={`${mono.className} text-[10px] text-[#8a7f68]`}>
-                HP {localHp} / {maxHp}
+                HP {localHp} / {totalMaxHp}
               </p>
             </div>
 
@@ -330,6 +397,7 @@ export default function InventoryManager({
               const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
               const btnBase = `${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                 disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`
+              const hasAffix = row.rolled_crit > 0 || row.rolled_lifesteal > 0
 
               return (
                 <div
@@ -351,17 +419,24 @@ export default function InventoryManager({
                     )}
                     <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
                       {item.type === 'weapon' &&
-                        `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
+                        `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
                       {item.type === 'armor' &&
                         [
-                          item.bonus_def ? `+${item.bonus_def} DEF` : null,
-                          item.bonus_hp ? `+${item.bonus_hp} HP` : null,
+                          item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
+                          item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
                         ]
                           .filter(Boolean)
                           .join(' · ')}
                       {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
                       {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
                     </p>
+                    {hasAffix && (
+                      <p className={`${mono.className} text-[11px] text-[#e0b050] mt-0.5`}>
+                        {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
+                        {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
+                        {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -413,11 +488,11 @@ export default function InventoryManager({
                     {item.type === 'consumable' && (
                       <button
                         onClick={() => useItem(row)}
-                        disabled={isPending || localHp >= maxHp}
+                        disabled={isPending || localHp >= totalMaxHp}
                         className={`${mono.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
                           disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
                       >
-                        {isPending ? '…' : localHp >= maxHp ? 'HP đầy' : 'Dùng'}
+                        {isPending ? '…' : localHp >= totalMaxHp ? 'HP đầy' : 'Dùng'}
                       </button>
                     )}
                   </div>
@@ -427,6 +502,82 @@ export default function InventoryManager({
           </div>
         </section>
       ))}
+
+      <section>
+        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
+          CHẾ TẠO
+        </h2>
+        <p className={`${mono.className} text-[11px] text-[#6b6249] mb-3`}>
+          Vàng hiện có: {localGold}
+        </p>
+
+        {craftResult && (
+          <p
+            className={`${mono.className} text-xs text-center mb-3 ${
+              craftResult.startsWith('Thành công') ? 'text-[#8fc4a8]' : 'text-[#c98787]'
+            }`}
+          >
+            {craftResult}
+          </p>
+        )}
+
+        {recipes.length === 0 ? (
+          <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+            Chưa có công thức chế tạo nào.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {recipes.map((recipe) => {
+              const isPending = pendingRecipeId === recipe.id
+              const canAffordGold = localGold >= recipe.goldCost
+              const hasAllMaterials = recipe.ingredients.every((ing) => {
+                const have = rows
+                  .filter((r) => r.items.id === ing.item.id)
+                  .reduce((sum, r) => sum + r.quantity, 0)
+                return have >= ing.quantity
+              })
+              const canCraft = canAffordGold && hasAllMaterials
+
+              return (
+                <div key={recipe.id} className="rounded-sm border border-[#2c261c] bg-[#17140f] p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className={RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}>
+                        {recipe.name}
+                      </p>
+                      <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                        {Math.round(recipe.successRate * 100)}% thành công
+                        {recipe.goldCost > 0 && ` · ${recipe.goldCost} vàng`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => craft(recipe)}
+                      disabled={!canCraft || isPending}
+                      className={`${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
+                        disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`}
+                    >
+                      {isPending ? '…' : 'Chế tạo'}
+                    </button>
+                  </div>
+                  <div className={`${mono.className} text-[11px] mt-2 space-y-0.5`}>
+                    {recipe.ingredients.map((ing) => {
+                      const have = rows
+                        .filter((r) => r.items.id === ing.item.id)
+                        .reduce((sum, r) => sum + r.quantity, 0)
+                      const enough = have >= ing.quantity
+                      return (
+                        <p key={ing.item.id} className={enough ? 'text-[#8a7f68]' : 'text-[#c98787]'}>
+                          {ing.item.name}: {have} / {ing.quantity}
+                        </p>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
+import { getEquippedStats } from '@/lib/equipped-stats'
 import AccountActions from './AccountActions'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
@@ -42,10 +43,13 @@ export default async function CharacterPage() {
     hp_per_level: number
   }
 
-  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
-  const currentHp = character.current_hp ?? maxHp
+  const [{ currentAp, nextApMinutes }, equippedStats] = await Promise.all([
+    applyApRegen(supabase, character),
+    getEquippedStats(supabase, character.id),
+  ])
 
-  const { currentAp, nextApMinutes } = await applyApRegen(supabase, character)
+  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level + equippedStats.bonusHp
+  const currentHp = character.current_hp ?? maxHp
 
   const accent = CLASS_ACCENT[cls.key] ?? CLASS_ACCENT.warrior
   const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
