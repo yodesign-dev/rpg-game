@@ -4,15 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
+import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
 
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
-const RARITY_TEXT: Record<string, string> = {
-  common: 'text-[#c9c4d4]',
-  rare: 'text-[#8fc4e0]',
-  epic: 'text-[#d0a8f0]',
-  legendary: 'text-[#f0c060]',
-}
 
 export type Zone = {
   id: string
@@ -39,24 +34,6 @@ type Fight = {
   drops: { key: string; rarity: string }[]
 }
 
-type LastFight = {
-  turn: number
-  enemy: string
-  log: {
-    turn: number
-    actor: 'character' | 'enemy' | 'system'
-    skill?: string
-    damage?: number
-    crit?: boolean
-    enemy_hp_left?: number
-    enemy_name?: string
-    character_hp_left?: number
-    message?: string
-    double?: boolean
-    opening?: boolean
-    thorns?: number
-  }[]
-}
 
 type ExploreResult = {
   zone: string
@@ -271,23 +248,6 @@ export default function ExploreManager({
   )
 }
 
-function Meter({ label, value, max, color, note }: { label: string; value: number; max: number; color: string; note: string }) {
-  const pct = Math.min(100, Math.round((value / Math.max(1, max)) * 100))
-  return (
-    <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-3">
-      <div className="flex justify-between text-xs text-[#a29fb3] mb-2">
-        <span>{label}</span>
-        <span className="text-sm text-white">
-          {value} / {max}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      {value < max && <p className="text-[11px] text-[#7d7a8c] text-right mt-1.5">{note}</p>}
-    </div>
-  )
-}
 
 function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
   const [showLastFight, setShowLastFight] = useState(false)
@@ -420,36 +380,4 @@ function TurnRow({
   )
 }
 
-function LastFightLog({ fight }: { fight: LastFight }) {
-  return (
-    <div className="mt-2 max-h-64 overflow-y-auto space-y-1 border-l border-white/[0.1] pl-3">
-      {fight.log.map((e, i) => (
-        <p key={i} className="text-[11px] leading-relaxed">
-          {e.actor === 'character' ? (
-            <span className="text-[#c9c4d4]">
-              <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : '⚔️'}{' '}
-              {e.opening && <span className="text-[#f0c060]">Khai Cuộc! </span>}
-              {e.skill} gây{' '}
-              <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
-              {e.crit && ' (chí mạng!)'} · {fight.enemy} còn {e.enemy_hp_left} HP
-            </span>
-          ) : e.actor === 'enemy' ? (
-            <span className="text-[#e09595]">
-              <span className="text-[#7d7a8c]">#{e.turn}</span> 🩸 {e.enemy_name} đánh {e.damage} · bạn còn{' '}
-              {e.character_hp_left} HP
-              {!!e.thorns && <span className="text-[#f0c060]"> · 🌵 Phản Đòn {e.thorns}</span>}
-            </span>
-          ) : (
-            <span className="text-[#f0c060]">⏱️ {e.message}</span>
-          )}
-        </p>
-      ))}
-    </div>
-  )
-}
 
-function ItemIcon({ icon, size }: { icon: string | null; size: number }) {
-  if (!icon) return null
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={`/items/${icon}`} alt="" width={size} height={size} className="[image-rendering:pixelated]" />
-}

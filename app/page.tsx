@@ -88,7 +88,7 @@ export default async function CharacterPage() {
         <div className="flex items-center justify-between mb-6">
           <SettingsMenu characterId={character.id} characterName={character.name} />
           <p className={`${mono.className} text-sm tracking-[3px] text-[#a29fb3]`}>
-            CHƯƠNG {character.current_chapter}
+            🗼 TẦNG {character.tower_best}
           </p>
           <div
             className={`${mono.className} flex items-center gap-2 bg-white/[0.06] border border-[#e0b050]/35

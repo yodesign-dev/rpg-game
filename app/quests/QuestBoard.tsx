@@ -20,7 +20,7 @@ const QUEST_ICON: Record<string, string> = {
   kills: '🗡️',
   boss: '👑',
   explore: '🧭',
-  dungeon: '🏰',
+  dungeon: '🗼',
   enchant: '🔨',
   convert: '⇅',
 }

@@ -8,7 +8,7 @@ export type FeedEntry = {
   character_id: string | null
   character_name: string
   character_title: string | null
-  kind: 'boss_kill' | 'legendary_item' | 'title'
+  kind: 'boss_kill' | 'legendary_item' | 'title' | 'tower'
   payload: {
     boss?: string
     where?: string
@@ -17,6 +17,7 @@ export type FeedEntry = {
     effect?: string | null
     title?: string
     emoji?: string
+    floor?: number
   }
   created_at: string
 }
@@ -63,10 +64,14 @@ export default function ActivityFeed({
             return (
               <li key={e.id} className="flex gap-2.5 text-xs leading-relaxed">
                 <span className="shrink-0 text-base leading-5">
-                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'title' ? '🎖️' : '✨'}
+                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'title' ? '🎖️' : e.kind === 'tower' ? '🗼' : '✨'}
                 </span>
                 <div className="min-w-0">
-                  {e.kind === 'title' ? (
+                  {e.kind === 'tower' ? (
+                    <p className="text-[#c9c4d4]">
+                      {name} đã chinh phục <b className="text-[#c8a8f0]">tầng {e.payload.floor}</b> Tháp Vực Sâu!
+                    </p>
+                  ) : e.kind === 'title' ? (
                     <p className="text-[#c9c4d4]">
                       {name} đạt danh hiệu{' '}
                       <b className="text-[#f0c060]">

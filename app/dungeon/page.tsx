@@ -1,107 +1,26 @@
-import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
-import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
-import BottomNav from '../BottomNav'
-import FloorList from './FloorList'
+import { getCurrentCharacter } from '@/lib/current-character'
+import GlassPage from '../GlassPage'
+import TowerClimber from './TowerClimber'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
-
-export default async function DungeonPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: character } = await supabase
-    .from('characters')
-    .select('*, classes(*)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (!character) redirect('/create-character')
-
-  const [{ data: dungeon }, { currentAp, currentHp }, stats] = await Promise.all([
-    supabase
-      .from('dungeons')
-      .select('*, dungeon_floors(*)')
-      .eq('chapter_number', character.current_chapter)
-      .maybeSingle(),
-    applyRegen(supabase, character),
-    getCharacterStats(supabase, character.id),
-  ])
-
-  // Tầng đã qua lưu ở dungeon_runs.current_floor (resolve_dungeon_floor ghi
-  // một dòng 'cleared' mỗi lần thắng). Lấy tầng cao nhất để mở khóa tầng kế.
-  const { data: clearedRuns, error: clearedRunsError } = dungeon
-    ? await supabase
-        .from('dungeon_runs')
-        .select('current_floor')
-        .eq('character_id', character.id)
-        .eq('dungeon_id', dungeon.id)
-        .eq('status', 'cleared')
-        .order('current_floor', { ascending: false })
-        .limit(1)
-    : { data: [], error: null }
-
-  if (clearedRunsError) throw clearedRunsError
-
-  const highestCleared = clearedRuns?.[0]?.current_floor ?? 0
-
-  const maxHp = stats.maxHp
-
-  const floors = ((dungeon?.dungeon_floors as any[]) ?? []).sort(
-    (a, b) => a.floor_number - b.floor_number
-  )
+export default async function TowerPage() {
+  const { supabase, character } = await getCurrentCharacter()
+  const [regen, stats] = await Promise.all([applyRegen(supabase, character), getCharacterStats(supabase, character.id)])
 
   return (
-    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-8">
-          <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
-            ← Về nhân vật
-          </Link>
-        </div>
-
-        {!dungeon ? (
-          <p className={`${mono.className} text-center text-[#8a7f68]`}>
-            Chưa có dungeon nào cho chương này.
-          </p>
-        ) : (
-          <>
-            <header className="text-center mb-4">
-              <p className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-2`}>
-                Chương {dungeon.chapter_number}
-              </p>
-              <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>{dungeon.name}</h1>
-              <p className="text-sm text-[#a89b7f] mt-2 max-w-md mx-auto">{dungeon.description}</p>
-            </header>
-
-            <div className={`${mono.className} text-center text-xs text-[#6b6249] mb-10`}>
-              AP hiện tại: {currentAp} / {character.max_ap} · cần {dungeon.ap_cost} AP mỗi lần vào tầng
-            </div>
-
-            <FloorList
-              characterId={character.id}
-              floors={floors}
-              highestCleared={highestCleared}
-              currentHp={Math.min(maxHp, currentHp ?? maxHp)}
-              maxHp={maxHp}
-              currentAp={currentAp}
-              apCost={dungeon.ap_cost}
-            />
-          </>
-        )}
-      </div>
-      <BottomNav />
-    </main>
+    <GlassPage
+      title="Tháp Vực Sâu"
+      subtitle="100 tầng, càng lên cao càng khó. Mỗi tầng 5 AP, HP giữ nguyên (qua tầng hồi 20%). Điểm hồi sinh mỗi 10 tầng."
+    >
+      <TowerClimber
+        characterId={character.id}
+        towerBest={character.tower_best}
+        currentHp={Math.min(stats.maxHp, regen.currentHp ?? stats.maxHp)}
+        maxHp={stats.maxHp}
+        currentAp={regen.currentAp}
+        maxAp={character.max_ap}
+      />
+    </GlassPage>
   )
 }

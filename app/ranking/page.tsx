@@ -6,6 +6,7 @@ const SORTS = [
   { key: 'level', label: 'Cấp độ' },
   { key: 'power', label: 'Lực chiến' },
   { key: 'boss_kills', label: 'Boss đã hạ' },
+  { key: 'tower', label: 'Tháp' },
 ] as const
 
 type Row = {
@@ -18,6 +19,7 @@ type Row = {
   out_power: number
   out_boss_kills: number
   out_kills: number
+  out_tower_best: number
   out_title: string | null
 }
 
@@ -32,7 +34,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
 
   return (
     <GlassPage title="Xếp Hạng" subtitle="Top 50 người chơi. Lực chiến tính từ ATK, DEF, HP, chí mạng, hút máu và hiệu ứng Huyền Thoại.">
-      <div role="tablist" className="grid grid-cols-3 gap-1.5 mb-4">
+      <div role="tablist" className="grid grid-cols-4 gap-1.5 mb-4">
         {SORTS.map((s) => (
           <Link
             key={s.key}
@@ -56,7 +58,13 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
         {rows.map((r) => {
           const me = r.out_character_id === character.id
           const value =
-            sort === 'power' ? `${r.out_power} LC` : sort === 'boss_kills' ? `${r.out_boss_kills} boss` : `Lv ${r.out_level}`
+            sort === 'power'
+              ? `${r.out_power} LC`
+              : sort === 'boss_kills'
+                ? `${r.out_boss_kills} boss`
+                : sort === 'tower'
+                  ? `Tầng ${r.out_tower_best}`
+                  : `Lv ${r.out_level}`
           return (
             <li key={r.out_character_id} className={`flex items-center gap-3 px-4 py-3 ${me ? 'bg-[#b06fd8]/[0.12]' : ''}`}>
               <span className="w-8 text-center text-sm shrink-0">

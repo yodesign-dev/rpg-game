@@ -18,8 +18,8 @@ export default function DungeonCta() {
         </svg>
       </div>
       <div className="flex-grow">
-        <div className="text-lg font-bold text-white">Vào Dungeon</div>
-        <div className={`${mono.className} text-xs text-[#e0b8b8] mt-0.5`}>Tiếp tục hành trình</div>
+        <div className="text-lg font-bold text-white">Tháp Vực Sâu</div>
+        <div className={`${mono.className} text-xs text-[#e0b8b8] mt-0.5`}>100 tầng · càng cao càng khó, thưởng càng lớn</div>
       </div>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f0c0c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 6l6 6-6 6" />
