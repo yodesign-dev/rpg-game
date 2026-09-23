@@ -8,7 +8,7 @@ export type FeedEntry = {
   character_id: string | null
   character_name: string
   character_title: string | null
-  kind: 'boss_kill' | 'legendary_item' | 'title' | 'tower'
+  kind: 'boss_kill' | 'legendary_item' | 'title' | 'tower' | 'gacha_jackpot'
   payload: {
     boss?: string
     where?: string
@@ -64,10 +64,15 @@ export default function ActivityFeed({
             return (
               <li key={e.id} className="flex gap-2.5 text-xs leading-relaxed">
                 <span className="shrink-0 text-base leading-5">
-                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'title' ? '🎖️' : e.kind === 'tower' ? '🗼' : '✨'}
+                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'title' ? '🎖️' : e.kind === 'tower' ? '🗼' : e.kind === 'gacha_jackpot' ? '💎' : '✨'}
                 </span>
                 <div className="min-w-0">
-                  {e.kind === 'tower' ? (
+                  {e.kind === 'gacha_jackpot' ? (
+                    <p className="text-[#c9c4d4]">
+                      {name} trúng <b className="text-[#f7c8f7]">JACKPOT</b> ở Thương Nhân Bí Ẩn:{' '}
+                      <b className="text-[#f0c060]">{e.payload.item}</b>!
+                    </p>
+                  ) : e.kind === 'tower' ? (
                     <p className="text-[#c9c4d4]">
                       {name} đã chinh phục <b className="text-[#c8a8f0]">tầng {e.payload.floor}</b> Tháp Vực Sâu!
                     </p>

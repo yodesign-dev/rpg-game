@@ -37,12 +37,12 @@ function tierOf(row: { rarity: string | null; items: { rarity: string } }) {
 
 const RARITY_RANK: Record<string, number> = { common: 0, rare: 1, epic: 2, legendary: 3 }
 
-// Khớp inventory_sell_price (schema.sql): trang bị có tier riêng bán gấp đôi
+// Khớp inventory_sell_price (schema.sql): trang bị có tier riêng bán ×1.5
 // mỗi bậc trên tier gốc; đồ mua ở chợ/vật phẩm gộp chồng bán đúng giá gốc.
 function sellPriceOf(row: InventoryRow) {
   const base = row.items.sell_price ?? 0
   const steps = Math.max(0, (RARITY_RANK[tierOf(row)] ?? 0) - (RARITY_RANK[row.items.rarity] ?? 0))
-  return base * 2 ** steps * row.quantity
+  return Math.round(base * 1.5 ** steps * row.quantity)
 }
 
 // Chế tạo có "tăng tỉ lệ": tốn gấp đôi vàng, tối thiểu 50 — khớp craft_item
