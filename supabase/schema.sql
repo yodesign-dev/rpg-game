@@ -90,7 +90,8 @@ create table items (
   key          text unique not null,
   name         text not null,
   type         text not null,                 -- weapon | armor | consumable | material
-  slot         text,                           -- weapon | head | body | accessory | null
+  slot         text,                           -- weapon | shield | head | chest | belt | amulet | boot | null
+  hand         text,                           -- one_hand | two_hand — chỉ có ý nghĩa khi slot là weapon/shield
   rarity       text not null default 'common', -- common | rare | epic | legendary
   bonus_atk    int not null default 0,
   bonus_def    int not null default 0,
@@ -107,6 +108,7 @@ create table inventory (
   item_id       uuid not null references items(id),
   quantity      int not null default 1,
   equipped      boolean not null default false,
+  equip_slot    text,                           -- head|chest|belt|amulet|boot|l_arm|r_arm|both_arms, null khi chưa mặc
   acquired_at   timestamptz not null default now()
 );
 
@@ -731,6 +733,26 @@ begin
   return query select v_new_hp, v_max_hp, v_new_quantity;
 end;
 $$;
+
+-- ============================================================================
+-- Trang bị đầy đủ: head/chest/belt/amulet/boot + 2 khớp tay riêng (l_arm/
+-- r_arm) cho vũ khí/khiên. Vũ khí 2 tay (ví dụ trượng của pháp sư) chiếm cả
+-- hai khớp tay cùng lúc và không thể mặc thêm khiên/vũ khí khác cho đến khi
+-- gỡ ra. Trang bị/gỡ vẫn là update() trực tiếp từ client theo RLS
+-- "own inventory update" sẵn có — không đụng gold/HP nên không cần RPC.
+-- ============================================================================
+
+update items set slot = 'chest' where slot = 'body';
+update items set hand = 'one_hand' where type = 'weapon' and hand is null;
+update items set hand = 'two_hand' where key = 'staff_starter';
+
+update inventory inv
+set equip_slot = case
+  when it.slot = 'weapon' then 'l_arm'
+  else it.slot
+end
+from items it
+where inv.item_id = it.id and inv.equipped = true and inv.equip_slot is null;
 
 -- ============================================================================
 -- Ghi chú:

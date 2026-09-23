@@ -28,7 +28,7 @@ export default async function InventoryPage() {
 
   const { data: inventory } = await supabase
     .from('inventory')
-    .select('id, quantity, equipped, items(*)')
+    .select('id, quantity, equipped, equip_slot, items(*)')
     .eq('character_id', character.id)
 
   const cls = character.classes as { base_hp: number; hp_per_level: number }
