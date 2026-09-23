@@ -5,12 +5,21 @@ import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
-import InventoryManager from './InventoryManager'
+import InventoryManager, { type InventoryTab } from './InventoryManager'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
-export default async function InventoryPage() {
+const TABS: InventoryTab[] = ['equip', 'bag', 'craft']
+
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const { tab } = await searchParams
+  const initialTab = TABS.includes(tab as InventoryTab) ? (tab as InventoryTab) : 'bag'
+
   const supabase = await createClient()
 
   const {
@@ -72,17 +81,14 @@ export default async function InventoryPage() {
   return (
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
       <div className="mx-auto max-w-2xl">
-        <div className="mb-8">
+        <div className="mb-4">
           <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
             ← Về nhân vật
           </Link>
         </div>
 
-        <header className="text-center mb-10">
+        <header className="text-center mb-4">
           <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>Túi Đồ</h1>
-          <p className={`${mono.className} text-xs text-[#8a7f68] mt-2`}>
-            {character.gold} vàng
-          </p>
         </header>
 
         {inventoryError && (
@@ -105,6 +111,7 @@ export default async function InventoryPage() {
           currentAp={currentAp}
           maxAp={character.max_ap}
           recipes={recipes}
+          initialTab={initialTab}
         />
       </div>
       <BottomNav />

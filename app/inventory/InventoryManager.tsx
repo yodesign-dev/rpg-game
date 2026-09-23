@@ -85,6 +85,15 @@ const TYPE_LABEL: Record<string, string> = {
   material: 'NGUYÊN LIỆU',
 }
 
+export type InventoryTab = 'equip' | 'bag' | 'craft'
+
+const TYPE_SHORT: Record<string, string> = {
+  weapon: 'Vũ khí',
+  armor: 'Giáp',
+  consumable: 'Hồi phục',
+  material: 'Nguyên liệu',
+}
+
 const TYPE_ORDER = ['weapon', 'armor', 'consumable', 'material']
 
 type Item = {
@@ -144,6 +153,7 @@ export default function InventoryManager({
   currentAp,
   maxAp,
   recipes,
+  initialTab,
 }: {
   characterId: string
   characterName: string
@@ -158,7 +168,10 @@ export default function InventoryManager({
   currentAp: number
   maxAp: number
   recipes: Recipe[]
+  initialTab: InventoryTab
 }) {
+  const [tab, setTabState] = useState<InventoryTab>(initialTab)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -376,10 +389,34 @@ export default function InventoryManager({
     setSelected(new Set())
   }
 
+  // Tab Trang bị: đồ đang mặc. Tab Túi đồ: đồ chưa mặc, lọc theo loại.
+  const bagRows = rows.filter((r) => !r.equipped)
+  const listRows =
+    tab === 'equip'
+      ? rows.filter((r) => r.equipped)
+      : bagRows.filter((r) => typeFilter === 'all' || r.items.type === typeFilter)
   const groups = TYPE_ORDER.map((type) => ({
     type,
-    rows: rows.filter((r) => r.items.type === type),
+    rows: listRows.filter((r) => r.items.type === type),
   })).filter((g) => g.rows.length > 0)
+
+  const craftableCount = recipes.filter(
+    (recipe) =>
+      localGold >= recipe.goldCost &&
+      recipe.ingredients.every(
+        (ing) =>
+          rows.filter((r) => r.items.id === ing.item.id).reduce((sum, r) => sum + r.quantity, 0) >= ing.quantity
+      )
+  ).length
+
+  function setTab(next: InventoryTab) {
+    if (next === tab) return
+    exitSellMode()
+    setSellResult(null)
+    setTabState(next)
+    // Giữ tab trên URL để tải lại trang không bị nhảy về tab đầu
+    window.history.replaceState(null, '', `?tab=${next}`)
+  }
 
   const equippedRows = rows.filter((r) => r.equipped)
   const totalAtk = baseAtk + equippedRows.reduce((sum, r) => sum + r.items.bonus_atk + r.rolled_atk, 0)
@@ -432,16 +469,48 @@ export default function InventoryManager({
     )
   }
 
+  const TABS: { key: InventoryTab; label: string; badge?: number }[] = [
+    { key: 'equip', label: '🛡️ Trang bị', badge: rows.filter((r) => r.equipped).length },
+    { key: 'bag', label: '🎒 Túi đồ', badge: bagRows.length },
+    { key: 'craft', label: '⚒️ Chế tạo', badge: craftableCount || undefined },
+  ]
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <div
+        className={`${mono.className} sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 bg-[#100e0c]/95 backdrop-blur border-b border-[#2c261c]`}
+      >
+        <div className="flex items-center justify-center gap-4 text-xs text-[#a89b7f] mb-3">
+          <span className="text-[#e0b050]">💰 {localGold}</span>
+          <span>❤️ {localHp}/{totalMaxHp}</span>
+          <span className="text-[#6b8a5a]">⚡ {localAp}/{maxAp}</span>
+        </div>
+        <div role="tablist" className="grid grid-cols-3 gap-1.5">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`rounded-sm border px-1 py-2 text-xs whitespace-nowrap transition-colors ${
+                tab === t.key
+                  ? 'border-[#8a7f68] bg-[#2c261c] text-[#f1e6c8]'
+                  : 'border-[#2c261c] text-[#8a7f68] hover:text-[#a89b7f]'
+              }`}
+            >
+              {t.label}
+              {t.badge ? <span className="ml-1 text-[#6b6249]">{t.badge}</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {error && (
         <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
       )}
 
+      {tab === 'equip' && (
       <section>
-        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3 text-center`}>
-          TRANG BỊ
-        </h2>
         <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-4 sm:p-5">
           <div className="flex items-start justify-center gap-2 sm:gap-4">
             <div className="flex flex-col gap-2">
@@ -483,17 +552,46 @@ export default function InventoryManager({
           </div>
         </div>
       </section>
+      )}
 
-      {rows.length === 0 && (
+      {tab === 'equip' && listRows.length === 0 && (
         <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
-          Túi đồ trống. Đánh quái trong dungeon để nhặt trang bị.
+          Chưa mặc món nào. Vào tab Túi đồ để trang bị.
         </p>
       )}
 
-      {rows.length > 0 && (
+      {tab === 'bag' && bagRows.length === 0 && (
+        <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+          Túi đồ trống. Đi thám hiểm hoặc đánh dungeon để nhặt đồ.
+        </p>
+      )}
+
+      {tab === 'bag' && bagRows.length > 0 && (
+        <div className={`${mono.className} flex flex-wrap gap-1.5`}>
+          {['all', ...TYPE_ORDER].map((type) => {
+            const n = type === 'all' ? bagRows.length : bagRows.filter((r) => r.items.type === type).length
+            if (n === 0) return null
+            return (
+              <button
+                key={type}
+                onClick={() => setTypeFilter(type)}
+                className={`rounded-full border px-3 py-1 text-[11px] ${
+                  typeFilter === type
+                    ? 'border-[#8a7f68] bg-[#2c261c] text-[#f1e6c8]'
+                    : 'border-[#2c261c] text-[#8a7f68]'
+                }`}
+              >
+                {type === 'all' ? 'Tất cả' : TYPE_SHORT[type]} ({n})
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === 'bag' && bagRows.length > 0 && (
         <div className={`${mono.className} space-y-3`}>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-[#8a7f68]">Vàng: {localGold}</span>
+            <span className="text-[11px] text-[#6b6249]">Chọn nhiều món để bán một lần</span>
             <button
               onClick={() => (sellMode ? exitSellMode() : (setSellMode(true), setSellResult(null)))}
               className={`text-xs border px-3 py-2 rounded-sm transition-colors ${
@@ -545,7 +643,7 @@ export default function InventoryManager({
         </div>
       )}
 
-      {groups.map((group) => (
+      {tab !== 'craft' && groups.map((group) => (
         <section key={group.type}>
           <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
             {TYPE_LABEL[group.type] ?? group.type.toUpperCase()}
@@ -737,13 +835,8 @@ export default function InventoryManager({
         </div>
       )}
 
+      {tab === 'craft' && (
       <section>
-        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
-          CHẾ TẠO
-        </h2>
-        <p className={`${mono.className} text-[11px] text-[#6b6249] mb-3`}>
-          Vàng hiện có: {localGold}
-        </p>
 
         {craftResult && (
           <p
@@ -852,6 +945,7 @@ export default function InventoryManager({
           </div>
         )}
       </section>
+      )}
     </div>
   )
 }
