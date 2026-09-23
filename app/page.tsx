@@ -31,14 +31,18 @@ export default async function CharacterPage() {
 
   if (!user) redirect('/login')
 
-  const { data: character } = await supabase
+  const { data: character, error: characterError } = await supabase
     .from('characters')
-    .select('*, classes(*), title:titles(name, emoji)')
+    // characters ↔ titles có 2 quan hệ (title_key trực tiếp + bảng character_titles)
+    // → phải chỉ rõ khóa ngoại, nếu không PostgREST báo lỗi "more than one relationship"
+    .select('*, classes(*), title:titles!characters_title_key_fkey(name, emoji)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
+  // Lỗi truy vấn ≠ chưa có nhân vật — không được đẩy sang trang tạo nhân vật
+  if (characterError) throw new Error(`Không tải được nhân vật: ${characterError.message}`)
   if (!character) redirect('/create-character')
 
   const cls = character.classes as {
