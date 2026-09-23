@@ -38,11 +38,11 @@ export default async function InventoryPage() {
   ] = await Promise.all([
     supabase
       .from('inventory')
-      .select('id, quantity, equipped, equip_slot, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)')
+      .select('id, quantity, equipped, equip_slot, rarity, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)')
       .eq('character_id', character.id),
     supabase
       .from('recipes')
-      .select('id, key, name, gold_cost, success_rate, description, result_item:items(id, key, name, rarity, icon)'),
+      .select('id, key, name, gold_cost, success_rate, description, result_item:items(id, key, name, rarity, icon, type)'),
     supabase
       .from('recipe_ingredients')
       .select('recipe_id, quantity, item:items(id, key, name)'),

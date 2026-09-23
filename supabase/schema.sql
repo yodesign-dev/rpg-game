@@ -136,6 +136,8 @@ create table inventory (
   rolled_hp        int not null default 0,
   rolled_crit      numeric not null default 0,
   rolled_lifesteal numeric not null default 0,
+  -- Tier riêng của món trang bị này (null = đồ mua ở chợ / vật phẩm gộp chồng → dùng items.rarity)
+  rarity        text check (rarity in ('common', 'rare', 'epic', 'legendary')),
   acquired_at   timestamptz not null default now()
 );
 
@@ -887,44 +889,120 @@ begin
 end;
 $$;
 
--- Thêm 1 món đồ rơi vào túi: trang bị luôn tạo dòng mới kèm affix roll (giống
--- đồ rơi dungeon), vật phẩm tiêu hao/nguyên liệu thì gộp chồng.
-create or replace function public.grant_drop(p_character_id uuid, p_item_id uuid)
+-- Thứ tự tier: common < rare < epic < legendary
+create or replace function public.rarity_rank(p_rarity text)
+returns int
+language sql
+immutable
+as $$
+  select case p_rarity when 'legendary' then 3 when 'epic' then 2 when 'rare' then 1 else 0 end;
+$$;
+
+-- Hệ số nhân chỉ số gốc (bonus_atk/def/hp của items) theo tier của từng món
+create or replace function public.rarity_multiplier(p_rarity text)
+returns numeric
+language sql
+immutable
+as $$
+  select case p_rarity when 'legendary' then 2.0 when 'epic' then 1.6 when 'rare' then 1.25 else 1.0 end;
+$$;
+
+-- Quay tier cho 1 món trang bị. p_table: 'normal' (quái thường), 'boss',
+-- 'craft', 'craft_boost' (bỏ gấp đôi vàng). Không bao giờ thấp hơn tier gốc
+-- của loại đồ (p_floor = items.rarity), vd. đồ boss rare không ra common.
+create or replace function public.roll_rarity(p_floor text, p_table text)
+returns text
+language plpgsql
+volatile
+as $$
+declare
+  v_roll numeric := random();
+  v_rarity text;
+begin
+  -- Ngưỡng cộng dồn [legendary, epic, rare] — phần còn lại là common
+  v_rarity := case p_table
+    when 'boss' then        case when v_roll < 0.05 then 'legendary' when v_roll < 0.25 then 'epic' when v_roll < 0.60 then 'rare' else 'common' end
+    when 'craft' then       case when v_roll < 0.02 then 'legendary' when v_roll < 0.12 then 'epic' when v_roll < 0.40 then 'rare' else 'common' end
+    when 'craft_boost' then case when v_roll < 0.05 then 'legendary' when v_roll < 0.25 then 'epic' when v_roll < 0.65 then 'rare' else 'common' end
+    else                    case when v_roll < 0.01 then 'legendary' when v_roll < 0.08 then 'epic' when v_roll < 0.30 then 'rare' else 'common' end
+  end;
+
+  if rarity_rank(v_rarity) < rarity_rank(coalesce(p_floor, 'common')) then
+    v_rarity := p_floor;
+  end if;
+
+  return v_rarity;
+end;
+$$;
+
+-- Tạo 1 món trang bị với tier cho trước: affix roll theo tier + phần chỉ số
+-- gốc được nhân theo tier cộng thẳng vào rolled_* — nhờ vậy mọi chỗ đang
+-- tính "bonus_* + rolled_*" (get_character_stats, combat, túi đồ) tự đúng.
+create or replace function public.create_equipment(p_character_id uuid, p_item_id uuid, p_rarity text)
 returns void
 language plpgsql
 set search_path = 'public'
 as $$
 declare
-  v_type text; v_slot text; v_school text; v_rarity text;
-  v_inventory_id uuid;
+  v_slot text; v_school text; v_bonus_atk int; v_bonus_def int; v_bonus_hp int;
+  v_mult numeric := rarity_multiplier(p_rarity);
   v_roll_atk int; v_roll_def int; v_roll_hp int; v_roll_crit numeric; v_roll_lifesteal numeric;
 begin
-  select type, slot, coalesce(school, 'physical'), rarity
-    into v_type, v_slot, v_school, v_rarity
-  from items where id = p_item_id;
+  select i.slot, coalesce(i.school, 'physical'), i.bonus_atk, i.bonus_def, i.bonus_hp
+    into v_slot, v_school, v_bonus_atk, v_bonus_def, v_bonus_hp
+  from items i where i.id = p_item_id;
 
-  if v_type in ('weapon', 'armor') then
-    select roll_atk, roll_def, roll_hp, roll_crit, roll_lifesteal
-      into v_roll_atk, v_roll_def, v_roll_hp, v_roll_crit, v_roll_lifesteal
-    from roll_item_affixes(v_slot, v_school, v_rarity);
+  select a.roll_atk, a.roll_def, a.roll_hp, a.roll_crit, a.roll_lifesteal
+    into v_roll_atk, v_roll_def, v_roll_hp, v_roll_crit, v_roll_lifesteal
+  from roll_item_affixes(v_slot, v_school, p_rarity) a;
 
-    insert into inventory (character_id, item_id, quantity, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal)
-    values (p_character_id, p_item_id, 1, v_roll_atk, v_roll_def, v_roll_hp, v_roll_crit, v_roll_lifesteal);
-  else
-    select id into v_inventory_id
-    from inventory where character_id = p_character_id and item_id = p_item_id
-    limit 1 for update;
-
-    if v_inventory_id is null then
-      insert into inventory (character_id, item_id, quantity) values (p_character_id, p_item_id, 1);
-    else
-      update inventory set quantity = quantity + 1 where id = v_inventory_id;
-    end if;
-  end if;
+  insert into inventory (character_id, item_id, quantity, rarity, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal)
+  values (
+    p_character_id, p_item_id, 1, p_rarity,
+    v_roll_atk + round(v_bonus_atk * (v_mult - 1)),
+    v_roll_def + round(v_bonus_def * (v_mult - 1)),
+    v_roll_hp + round(v_bonus_hp * (v_mult - 1)),
+    v_roll_crit, v_roll_lifesteal
+  );
 end;
 $$;
 
-revoke execute on function public.grant_drop(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.create_equipment(uuid, uuid, text) from public, anon, authenticated;
+
+-- Thêm 1 món đồ rơi vào túi. Trang bị: quay tier (bảng boss nếu p_is_boss)
+-- rồi tạo dòng mới. Vật phẩm tiêu hao/nguyên liệu: gộp chồng, giữ tier gốc.
+-- Trả về tier thực tế của món vừa nhận.
+create or replace function public.grant_drop(p_character_id uuid, p_item_id uuid, p_is_boss boolean default false)
+returns text
+language plpgsql
+set search_path = 'public'
+as $$
+declare
+  v_type text; v_base_rarity text; v_rarity text;
+  v_inventory_id uuid;
+begin
+  select i.type, i.rarity into v_type, v_base_rarity from items i where i.id = p_item_id;
+
+  if v_type in ('weapon', 'armor') then
+    v_rarity := roll_rarity(v_base_rarity, case when p_is_boss then 'boss' else 'normal' end);
+    perform create_equipment(p_character_id, p_item_id, v_rarity);
+    return v_rarity;
+  end if;
+
+  select inv.id into v_inventory_id
+  from inventory inv where inv.character_id = p_character_id and inv.item_id = p_item_id
+  limit 1 for update;
+
+  if v_inventory_id is null then
+    insert into inventory (character_id, item_id, quantity) values (p_character_id, p_item_id, 1);
+  else
+    update inventory set quantity = quantity + 1 where id = v_inventory_id;
+  end if;
+
+  return v_base_rarity;
+end;
+$$;
+revoke execute on function public.grant_drop(uuid, uuid, boolean) from public, anon, authenticated;
 
 -- Mô phỏng một lượt đánh dungeon: khóa nhân vật, tính sát thương theo lượt,
 -- trừ AP, cộng thưởng nếu thắng, ghi nhận dungeon_runs. Trả về log trận đấu.
@@ -1324,8 +1402,8 @@ join recipes r on r.key = ing.recipe_key
 join items i on i.key = ing.item_key
 on conflict (recipe_id, item_id) do nothing;
 
-create or replace function public.craft_item(p_character_id uuid, p_recipe_id uuid)
-returns table(success boolean, result_name text, new_gold int)
+create or replace function public.craft_item(p_character_id uuid, p_recipe_id uuid, p_boost boolean default false)
+returns table(success boolean, result_name text, new_gold int, result_rarity text)
 language plpgsql
 security definer
 set search_path = 'public'
@@ -1340,6 +1418,7 @@ declare
   v_success boolean;
   v_result_name text;
   v_existing_id uuid; v_existing_qty int;
+  v_result_rarity text;
 begin
   select user_id, gold into v_owner_user_id, v_gold
   from characters where id = p_character_id for update;
@@ -1355,6 +1434,11 @@ begin
   from recipes where id = p_recipe_id;
 
   if not found then raise exception 'Không tìm thấy công thức'; end if;
+
+  -- Tăng tỉ lệ tier cao: tốn gấp đôi vàng (tối thiểu 50 nếu công thức miễn phí)
+  if p_boost then
+    v_gold_cost := greatest(50, v_gold_cost * 2);
+  end if;
 
   if v_gold < v_gold_cost then
     raise exception 'Không đủ vàng (cần % vàng)', v_gold_cost;
@@ -1406,7 +1490,11 @@ begin
     select type into v_result_type from items where id = v_result_item_id;
 
     if v_result_type in ('weapon', 'armor') then
-      insert into inventory (character_id, item_id, quantity) values (p_character_id, v_result_item_id, v_result_qty);
+      select i.rarity into v_result_rarity from items i where i.id = v_result_item_id;
+      v_result_rarity := roll_rarity(v_result_rarity, case when p_boost then 'craft_boost' else 'craft' end);
+      for v_n in 1..v_result_qty loop
+        perform create_equipment(p_character_id, v_result_item_id, v_result_rarity);
+      end loop;
     else
       select id, quantity into v_existing_id, v_existing_qty
       from inventory where character_id = p_character_id and item_id = v_result_item_id
@@ -1422,7 +1510,7 @@ begin
     select name into v_result_name from items where id = v_result_item_id;
   end if;
 
-  return query select v_success, v_result_name, (v_gold - v_gold_cost);
+  return query select v_success, v_result_name, (v_gold - v_gold_cost), v_result_rarity;
 end;
 $$;
 
@@ -1699,6 +1787,7 @@ declare
   v_fight_exp int; v_fight_gold int;
   v_exp_gained int := 0; v_gold_gained int := 0;
   v_drop record;
+  v_drop_rarity text;
   v_fight_drops jsonb;
   v_drop_counts jsonb := '{}'::jsonb;
   v_fights jsonb := '[]'::jsonb;
@@ -1801,11 +1890,12 @@ begin
         where zd.zone_id = p_zone_id and (not zd.boss_only or v_is_boss)
       loop
         continue when random() >= v_drop.drop_rate;
-        perform grant_drop(p_character_id, v_drop.item_id);
-        v_fight_drops := v_fight_drops || to_jsonb(v_drop.key);
+        v_drop_rarity := grant_drop(p_character_id, v_drop.item_id, v_is_boss);
+        v_fight_drops := v_fight_drops || jsonb_build_object('key', v_drop.key, 'rarity', v_drop_rarity);
+        -- Gộp theo cặp item|tier (cùng 1 món có thể rơi ra nhiều tier khác nhau)
         v_drop_counts := jsonb_set(
-          v_drop_counts, array[v_drop.key],
-          to_jsonb(coalesce((v_drop_counts ->> v_drop.key)::int, 0) + 1)
+          v_drop_counts, array[v_drop.key || '|' || v_drop_rarity],
+          to_jsonb(coalesce((v_drop_counts ->> (v_drop.key || '|' || v_drop_rarity))::int, 0) + 1)
         );
       end loop;
     end if;
@@ -1847,11 +1937,15 @@ begin
   end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
-           'key', i.key, 'name', i.name, 'icon', i.icon, 'rarity', i.rarity,
-           'quantity', (v_drop_counts ->> i.key)::int
-         ) order by i.rarity desc, i.name), '[]'::jsonb)
+           'key', i.key, 'name', i.name, 'icon', i.icon, 'rarity', dc.drop_rarity,
+           'quantity', dc.qty
+         ) order by rarity_rank(dc.drop_rarity) desc, i.name), '[]'::jsonb)
     into v_drops
-  from items i where i.key in (select jsonb_object_keys(v_drop_counts));
+  from (
+    select split_part(e.key, '|', 1) as item_key, split_part(e.key, '|', 2) as drop_rarity, e.value::int as qty
+    from jsonb_each_text(v_drop_counts) e
+  ) dc
+  join items i on i.key = dc.item_key;
 
   insert into explore_runs (character_id, zone_id, turns_requested, turns_completed, wins, died, exp_gained, gold_gained, drops)
   values (p_character_id, p_zone_id, p_turns, v_turns_completed, v_wins, v_died, v_exp_gained, v_gold_gained, v_drops);

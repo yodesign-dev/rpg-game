@@ -36,7 +36,7 @@ type Fight = {
   dmg_taken: number
   exp: number
   gold: number
-  drops: string[]
+  drops: { key: string; rarity: string }[]
 }
 
 type LastFight = {
@@ -352,7 +352,7 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
         <div className="mt-3 flex flex-wrap gap-2">
           {result.drops.map((d) => (
             <span
-              key={d.key}
+              key={`${d.key}|${d.rarity}`}
               className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.08] px-2 py-1 text-sm"
             >
               <ItemIcon icon={d.icon} size={20} />
@@ -397,9 +397,9 @@ function TurnRow({
             {f.result === 'flee' ? 'rút lui' : 'gục ngã'}
           </span>
         )}
-        {f.drops.map((key, i) => (
-          <span key={i} className="flex items-center gap-1 text-[#b8e0c8]">
-            <ItemIcon icon={dropInfo[key]?.icon ?? null} size={14} />+{dropInfo[key]?.name ?? key}
+        {f.drops.map((d, i) => (
+          <span key={i} className={`flex items-center gap-1 ${RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}`}>
+            <ItemIcon icon={dropInfo[d.key]?.icon ?? null} size={14} />+{dropInfo[d.key]?.name ?? d.key}
           </span>
         ))}
       </div>

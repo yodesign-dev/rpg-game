@@ -20,6 +20,24 @@ const RARITY_BORDER: Record<string, string> = {
   legendary: 'border-[#8a6a1f]',
 }
 
+const RARITY_LABEL: Record<string, string> = {
+  common: 'Thường',
+  rare: 'Hiếm',
+  epic: 'Sử Thi',
+  legendary: 'Huyền Thoại',
+}
+
+// Tier của từng món: đồ rơi/chế tạo có tier riêng (inventory.rarity), đồ mua ở
+// chợ và vật phẩm gộp chồng thì dùng tier gốc của loại đồ.
+function tierOf(row: { rarity: string | null; items: { rarity: string } }) {
+  return row.rarity ?? row.items.rarity
+}
+
+// Chế tạo có "tăng tỉ lệ": tốn gấp đôi vàng, tối thiểu 50 — khớp craft_item
+function boostCost(goldCost: number) {
+  return Math.max(50, goldCost * 2)
+}
+
 const SLOT_ICON: Record<string, string> = {
   head: '🪖',
   l_arm: '⚔️',
@@ -88,6 +106,7 @@ type InventoryRow = {
   rolled_hp: number
   rolled_crit: number
   rolled_lifesteal: number
+  rarity: string | null
   items: Item
 }
 
@@ -97,7 +116,7 @@ type Recipe = {
   goldCost: number
   successRate: number
   description: string | null
-  resultItem: { id: string; key: string; name: string; rarity: string; icon: string | null }
+  resultItem: { id: string; key: string; name: string; rarity: string; icon: string | null; type: string }
   ingredients: { item: { id: string; key: string; name: string }; quantity: number }[]
 }
 
@@ -137,7 +156,8 @@ export default function InventoryManager({
   const [localAp, setLocalAp] = useState(currentAp)
   const [localGold, setLocalGold] = useState(gold)
   const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null)
-  const [craftResult, setCraftResult] = useState<string | null>(null)
+  const [craftResult, setCraftResult] = useState<{ text: string; rarity: string | null; ok: boolean } | null>(null)
+  const [boosted, setBoosted] = useState<Record<string, boolean>>({})
 
   async function useItem(row: InventoryRow) {
     setError(null)
@@ -253,6 +273,7 @@ export default function InventoryManager({
     const { data, error: rpcError } = await supabase.rpc('craft_item', {
       p_character_id: characterId,
       p_recipe_id: recipe.id,
+      p_boost: !!boosted[recipe.id],
     })
 
     if (rpcError) {
@@ -262,13 +283,21 @@ export default function InventoryManager({
     }
 
     const res = (Array.isArray(data) ? data[0] : data) as
-      | { success: boolean; result_name: string | null; new_gold: number }
+      | { success: boolean; result_name: string | null; new_gold: number; result_rarity: string | null }
       | undefined
 
     if (res) {
       setLocalGold(res.new_gold)
       setCraftResult(
-        res.success ? `Thành công! Nhận được ${res.result_name}.` : 'Thất bại — nguyên liệu đã mất.'
+        res.success
+          ? {
+              ok: true,
+              rarity: res.result_rarity,
+              text: `Thành công! Nhận được ${res.result_name}${
+                res.result_rarity ? ` [${RARITY_LABEL[res.result_rarity]}]` : ''
+              }.`,
+            }
+          : { ok: false, rarity: null, text: 'Thất bại — nguyên liệu đã mất.' }
       )
     }
 
@@ -278,7 +307,7 @@ export default function InventoryManager({
     const { data: fresh } = await supabase
       .from('inventory')
       .select(
-        'id, quantity, equipped, equip_slot, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
+        'id, quantity, equipped, equip_slot, rarity, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
       )
       .eq('character_id', characterId)
 
@@ -319,8 +348,8 @@ export default function InventoryManager({
     const item = row.items
     return (
       <div
-        title={item.name}
-        className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+        title={`${item.name} [${RARITY_LABEL[tierOf(row)]}]`}
+        className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border ${RARITY_BORDER[tierOf(row)] ?? RARITY_BORDER.common}
           bg-[#17140f] flex flex-col items-center justify-center gap-0.5 px-1 shrink-0`}
       >
         {item.icon ? (
@@ -335,7 +364,7 @@ export default function InventoryManager({
         )}
         <span
           className={`${mono.className} text-[8px] text-center leading-tight line-clamp-2
-            ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}
+            ${RARITY_COLOR[tierOf(row)] ?? RARITY_COLOR.common}`}
         >
           {item.name}
         </span>
@@ -411,7 +440,8 @@ export default function InventoryManager({
             {group.rows.map((row) => {
               const item = row.items
               const isPending = pendingRowId === row.id
-              const rarityClass = RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common
+              const tier = tierOf(row)
+              const rarityClass = RARITY_COLOR[tier] ?? RARITY_COLOR.common
               const isArmItem = item.slot === 'weapon' || item.slot === 'shield'
               const isRingItem = item.slot === 'ring'
               const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
@@ -428,7 +458,7 @@ export default function InventoryManager({
                   <div className="flex items-center gap-3 min-w-0">
                     {item.icon && (
                       <div
-                        className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+                        className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common}
                           bg-[#0d0b09] flex items-center justify-center shrink-0`}
                       >
                         <img
@@ -441,6 +471,11 @@ export default function InventoryManager({
                     )}
                     <div className="min-w-0">
                       <p className={rarityClass}>
+                        {(item.type === 'weapon' || item.type === 'armor') && (
+                          <span className={`${mono.className} block text-[10px] tracking-widest`}>
+                            {RARITY_LABEL[tier]?.toUpperCase()}
+                          </span>
+                        )}
                         {item.name}
                         {row.quantity > 1 && (
                           <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
@@ -555,10 +590,13 @@ export default function InventoryManager({
         {craftResult && (
           <p
             className={`${mono.className} text-xs text-center mb-3 ${
-              craftResult.startsWith('Thành công') ? 'text-[#8fc4a8]' : 'text-[#c98787]'
+              craftResult.ok
+                ? (craftResult.rarity && RARITY_COLOR[craftResult.rarity]) || 'text-[#8fc4a8]'
+                : 'text-[#c98787]'
             }`}
           >
-            {craftResult}
+            {craftResult.rarity === 'legendary' && '✨ '}
+            {craftResult.text}
           </p>
         )}
 
@@ -570,7 +608,10 @@ export default function InventoryManager({
           <div className="space-y-3">
             {recipes.map((recipe) => {
               const isPending = pendingRecipeId === recipe.id
-              const canAffordGold = localGold >= recipe.goldCost
+              const isEquipment = recipe.resultItem.type === 'weapon' || recipe.resultItem.type === 'armor'
+              const isBoosted = isEquipment && !!boosted[recipe.id]
+              const cost = isBoosted ? boostCost(recipe.goldCost) : recipe.goldCost
+              const canAffordGold = localGold >= cost
               const hasAllMaterials = recipe.ingredients.every((ing) => {
                 const have = rows
                   .filter((r) => r.items.id === ing.item.id)
@@ -602,8 +643,16 @@ export default function InventoryManager({
                         </p>
                         <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
                           {Math.round(recipe.successRate * 100)}% thành công
-                          {recipe.goldCost > 0 && ` · ${recipe.goldCost} vàng`}
+                          {cost > 0 && ` · ${cost} vàng`}
                         </p>
+                        {isEquipment && (
+                          <p className={`${mono.className} text-[11px] text-[#6b6249] mt-0.5`}>
+                            Tier ngẫu nhiên
+                            {recipe.resultItem.rarity !== 'common' &&
+                              ` (tối thiểu ${RARITY_LABEL[recipe.resultItem.rarity]})`}
+                            {isBoosted ? ' · Huyền Thoại 5%' : ' · Huyền Thoại 2%'}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <button
@@ -615,6 +664,17 @@ export default function InventoryManager({
                       {isPending ? '…' : 'Chế tạo'}
                     </button>
                   </div>
+                  {isEquipment && (
+                    <label className={`${mono.className} flex items-center gap-2 mt-2 text-[11px] text-[#a89b7f] cursor-pointer`}>
+                      <input
+                        type="checkbox"
+                        checked={isBoosted}
+                        onChange={(e) => setBoosted((b) => ({ ...b, [recipe.id]: e.target.checked }))}
+                        className="accent-[#e0b050]"
+                      />
+                      Tăng tỉ lệ tier cao ({boostCost(recipe.goldCost)} vàng thay vì {recipe.goldCost})
+                    </label>
+                  )}
                   <div className={`${mono.className} text-[11px] mt-2 space-y-0.5`}>
                     {recipe.ingredients.map((ing) => {
                       const have = rows
