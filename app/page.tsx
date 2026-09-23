@@ -180,8 +180,10 @@ export default async function CharacterPage() {
         <ExploreCta />
         <DungeonCta />
 
-        <div className={`${mono.className} grid grid-cols-3 gap-2 mb-4`}>
+        <div className={`${mono.className} grid grid-cols-5 gap-2 mb-4`}>
           {[
+            { href: '/talents', icon: '🌟', label: 'Thiên phú' },
+            { href: '/classes', icon: '📖', label: 'Lớp' },
             { href: '/ranking', icon: '🏆', label: 'Xếp hạng' },
             { href: '/titles', icon: '🎖️', label: 'Danh hiệu' },
             { href: '/training', icon: '🎯', label: 'Nộm tập' },
@@ -192,7 +194,7 @@ export default async function CharacterPage() {
               className="rounded-[16px] bg-white/[0.045] border border-white/[0.09] py-3 text-center hover:bg-white/[0.08]"
             >
               <div className="text-xl">{l.icon}</div>
-              <div className="text-xs text-[#c9c4d4] mt-1">{l.label}</div>
+              <div className="text-[11px] text-[#c9c4d4] mt-1 whitespace-nowrap">{l.label}</div>
             </Link>
           ))}
         </div>

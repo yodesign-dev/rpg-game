@@ -393,6 +393,33 @@ $$;
 -- Dùng chung cho combat, use_item, reset_stats và các trang hiển thị để số
 -- trên UI không lệch với số trong trận. security invoker: RLS vẫn áp dụng khi
 -- client gọi trực tiếp (chỉ đọc được nhân vật của chính mình).
+-- Tổng hiệu ứng Cây Thiên Phú (bảng ở phần CÂY THIÊN PHÚ cuối file; plpgsql nên
+-- tạo trước bảng vẫn được)
+create or replace function public.get_talent_totals(p_character_id uuid)
+returns jsonb
+language plpgsql
+stable
+set search_path = 'public'
+as $$
+declare
+  v jsonb;
+begin
+  select coalesce(jsonb_object_agg(s.k, s.val), '{}'::jsonb) into v
+  from (
+    select e.key as k,
+           case when e.key in ('crit_mult', 'opening', 'low_hp_ls')
+                then max(e.value::text::numeric) else sum(e.value::text::numeric) end as val
+    from character_talents ct
+    join talent_nodes n on n.key = ct.node_key
+    cross join lateral jsonb_each(n.effects) e
+    where ct.character_id = p_character_id
+    group by e.key
+  ) s;
+  return v;
+end;
+$$;
+
+
 create or replace function public.get_character_stats(p_character_id uuid)
 returns table(
   base_max_hp int, base_atk int, base_def int, base_spd int, attr_crit numeric,
@@ -405,19 +432,26 @@ as $$
   select
     b.base_max_hp, b.base_atk, b.base_def, b.base_spd, b.attr_crit,
     b.base_max_hp + e.hp, b.base_atk + e.atk, b.base_def + e.def,
-    b.attr_crit + e.crit, e.lifesteal
+    b.attr_crit + b.talent_crit + e.crit, b.talent_lifesteal + e.lifesteal
   from (
+    -- Thiên phú: % nhân vào chỉ số gốc (không nhân trang bị), chí mạng/hút máu cộng thẳng
     select
-      cl.base_hp + (ch.level - 1) * cl.hp_per_level + ab.attr_hp as base_max_hp,
-      cl.base_atk + (ch.level - 1) * cl.atk_per_level + ab.attr_atk as base_atk,
-      cl.base_def + (ch.level - 1) * cl.def_per_level + ab.attr_def as base_def,
+      round((cl.base_hp + (ch.level - 1) * cl.hp_per_level + ab.attr_hp)
+            * greatest(0.1, 1 + coalesce((t.j->>'hp_pct')::numeric, 0)))::int as base_max_hp,
+      round((cl.base_atk + (ch.level - 1) * cl.atk_per_level + ab.attr_atk)
+            * greatest(0.1, 1 + coalesce((t.j->>'atk_pct')::numeric, 0)))::int as base_atk,
+      round((cl.base_def + (ch.level - 1) * cl.def_per_level + ab.attr_def)
+            * greatest(0.1, 1 + coalesce((t.j->>'def_pct')::numeric, 0)))::int as base_def,
       cl.base_spd + (ch.level - 1) * cl.spd_per_level as base_spd,
-      ab.attr_crit
+      ab.attr_crit,
+      coalesce((t.j->>'crit')::numeric, 0) as talent_crit,
+      coalesce((t.j->>'lifesteal')::numeric, 0) as talent_lifesteal
     from characters ch
     join classes cl on cl.id = ch.class_id
     cross join lateral attribute_bonuses(
       cl.main_stat, ch.stat_str, ch.stat_int, ch.stat_agi, ch.stat_dex, ch.stat_vit
     ) ab
+    cross join lateral (select get_talent_totals(ch.id) as j) t
     where ch.id = p_character_id
   ) b
   cross join lateral (
@@ -782,7 +816,9 @@ begin
 
   return query select
     v_a1_name, v_a1_power, v_a2_name, v_a2_power,
-    case when v_passive_type = 'damage_reduction' then v_passive_value else 0 end,
+    -- skill bị động + thiên phú, tối đa 60%
+    least(0.6, case when v_passive_type = 'damage_reduction' then v_passive_value else 0 end
+               + coalesce((get_talent_totals(p_character_id)->>'dmg_red')::numeric, 0)),
     case when v_passive_type = 'lifesteal' then v_passive_value else 0 end,
     case when v_passive_type = 'crit_chance' then v_passive_value else 0 end;
 end;
@@ -796,7 +832,8 @@ create or replace function public.simulate_fight(
   p_a1_name text, p_a1_power numeric, p_a2_name text, p_a2_power numeric,
   p_enemy_name text, p_enemy_hp int, p_enemy_atk int, p_enemy_def int,
   p_damage_multiplier numeric, p_with_log boolean,
-  p_effects text[] default '{}'
+  p_effects text[] default '{}',
+  p_mods jsonb default '{}'       -- tổng thiên phú (get_talent_totals)
 )
 returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb)
 language plpgsql
@@ -814,10 +851,15 @@ declare
   v_timed_out boolean := false;
   v_dmg_taken int := 0;
   v_hits int; v_hit int;
-  -- Hiệu ứng Huyền Thoại (đã distinct ở get_character_effects)
-  v_double boolean := 'double_strike' = any(p_effects);
-  v_crit_mult numeric := case when 'deadly_crit' = any(p_effects) then 2.0 else 1.5 end;
-  v_opening boolean := 'opening_strike' = any(p_effects);
+  -- Hiệu ứng Huyền Thoại (đã distinct ở get_character_effects) + thiên phú (p_mods)
+  v_double_chance numeric := least(0.5,
+    case when 'double_strike' = any(p_effects) then 0.15 else 0 end + coalesce((p_mods->>'double')::numeric, 0));
+  v_crit_mult numeric := greatest(case when 'deadly_crit' = any(p_effects) then 2.0 else 1.5 end,
+                                  coalesce((p_mods->>'crit_mult')::numeric, 0));
+  v_opening_mult numeric := greatest(case when 'opening_strike' = any(p_effects) then 2 else 1 end,
+                                     coalesce((p_mods->>'opening')::numeric, 1));
+  v_low_hp_ls numeric := greatest(1, coalesce((p_mods->>'low_hp_ls')::numeric, 1));
+  v_opening boolean;
   v_guardian numeric := case when 'guardian' = any(p_effects) then 0.88 else 1 end;
   v_thorns_on boolean := 'thorns' = any(p_effects);
 begin
@@ -830,29 +872,32 @@ begin
       v_skill_name := p_a2_name; v_skill_power := p_a2_power;
     end if;
 
-    -- Đòn Kép: 15% đánh thêm 1 đòn trong lượt
-    v_hits := case when v_double and random() < 0.15 then 2 else 1 end;
+    -- Đòn Kép: đánh thêm 1 đòn trong lượt
+    v_hits := case when random() < v_double_chance then 2 else 1 end;
 
     for v_hit in 1..v_hits loop
       exit when v_enemy_hp <= 0;
 
       v_base_dmg := greatest(1, p_char_atk * v_skill_power - p_enemy_def);
-      if v_opening and v_turn = 1 and v_hit = 1 then
-        v_base_dmg := v_base_dmg * 2;   -- Khai Cuộc
+      v_opening := v_opening_mult > 1 and v_turn = 1 and v_hit = 1;
+      if v_opening then
+        v_base_dmg := v_base_dmg * v_opening_mult;   -- Khai Cuộc
       end if;
       v_is_crit := random() < p_crit;
       v_dmg := round(v_base_dmg * (case when v_is_crit then v_crit_mult else 1 end));
       v_enemy_hp := greatest(0, v_enemy_hp - v_dmg);
 
       if p_lifesteal > 0 then
-        v_char_hp := least(p_max_hp, v_char_hp + round(v_dmg * p_lifesteal));
+        -- Khát Máu Vô Tận: HP dưới 30% thì hút máu nhân thêm
+        v_char_hp := least(p_max_hp, v_char_hp + round(v_dmg * p_lifesteal
+          * case when v_char_hp < p_max_hp * 0.3 then v_low_hp_ls else 1 end));
       end if;
 
       if p_with_log then
         v_log := v_log || jsonb_build_object(
           'turn', v_turn, 'actor', 'character', 'skill', v_skill_name,
           'damage', v_dmg, 'crit', v_is_crit, 'enemy_hp_left', v_enemy_hp,
-          'double', v_hit = 2, 'opening', v_opening and v_turn = 1 and v_hit = 1
+          'double', v_hit = 2, 'opening', v_opening
         );
       end if;
     end loop;
@@ -2221,7 +2266,7 @@ begin
       v_crit_chance, v_lifesteal, v_dmg_reduction,
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
       v_enemy.name, v_enemy.hp, v_enemy.atk, v_enemy.def,
-      v_damage_multiplier, true, v_effects
+      v_damage_multiplier, true, v_effects, get_talent_totals(p_character_id)
     ) f;
 
     -- Chỉ giữ log từng đòn của trận cuối (nút "Xem trận cuối" trên web)
@@ -3027,7 +3072,7 @@ begin
     least(0.75, v_crit + v_skill_crit), 0, 0,
     v_a1_name, v_a1_power, v_a2_name, v_a2_power,
     'Nộm Tập', 2000000000, 0, v_def,
-    1, true, v_effects
+    1, true, v_effects, get_talent_totals(p_character_id)
   ) f;
 
   select coalesce(jsonb_agg(e), '[]'::jsonb) into v_hits
@@ -3391,7 +3436,7 @@ begin
         v_crit_chance, v_lifesteal, v_dmg_reduction,
         v_a1_name, v_a1_power, v_a2_name, v_a2_power,
         v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
-        v_dmg_mult, true, v_effects
+        v_dmg_mult, true, v_effects, get_talent_totals(p_character_id)
       ) f;
 
       v_last_fight := jsonb_build_object('floor', v_floor, 'enemy', v_enemy.out_name, 'log', v_fight_log);
@@ -3815,3 +3860,255 @@ begin
   return jsonb_build_object('changed', v_changed, 'power_before', v_before, 'power_after', v_after);
 end;
 $$;
+
+-- ============================================================================
+-- CÂY THIÊN PHÚ
+-- ============================================================================
+
+-- 1. Dữ liệu cây -------------------------------------------------------------------
+create table if not exists talent_nodes (
+  key         text primary key,
+  name        text not null,
+  icon        text not null,
+  branch      text not null,
+  kind        text not null check (kind in ('start', 'small', 'notable', 'keystone')),
+  cost        int not null,
+  x           numeric not null,     -- toạ độ SVG, tâm (0,0)
+  y           numeric not null,
+  effects     jsonb not null default '{}'::jsonb,
+  description text not null
+);
+
+create table if not exists talent_edges (
+  a text not null references talent_nodes(key) on delete cascade,
+  b text not null references talent_nodes(key) on delete cascade,
+  primary key (a, b)
+);
+
+create table if not exists character_talents (
+  character_id uuid not null references characters(id) on delete cascade,
+  node_key     text not null references talent_nodes(key),
+  learned_at   timestamptz not null default now(),
+  primary key (character_id, node_key)
+);
+
+alter table talent_nodes enable row level security;
+alter table talent_edges enable row level security;
+alter table character_talents enable row level security;
+drop policy if exists "public read talent_nodes" on talent_nodes;
+create policy "public read talent_nodes" on talent_nodes for select using (true);
+drop policy if exists "public read talent_edges" on talent_edges;
+create policy "public read talent_edges" on talent_edges for select using (true);
+drop policy if exists "own character_talents select" on character_talents;
+create policy "own character_talents select" on character_talents
+  for select using (exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid()));
+grant select on table talent_nodes, talent_edges to anon, authenticated;
+grant select on table character_talents to authenticated;
+
+-- Các ô (toạ độ tính sẵn theo vòng tròn) và đường nối
+insert into talent_nodes (key, name, icon, branch, kind, cost, x, y, effects, description) values
+  ('origin', 'Khởi Nguyên', '✦', 'origin', 'start', 0, 0, 0, '{}'::jsonb, 'Điểm xuất phát'),
+  ('hp_1', 'Sinh Lực', '❤️', 'hp', 'small', 1, 0.0, -17.0, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
+  ('hp_2', 'Sinh Lực II', '❤️', 'hp', 'small', 1, 0.0, -34.0, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
+  ('hp_n', 'Sinh Lực Dồi Dào', '❤️', 'hp', 'notable', 2, 0.0, -51.0, '{"hp_pct": 0.08, "def_pct": 0.03}'::jsonb, '+8% HP, +3% DEF'),
+  ('hp_side', 'Da Thịt Rắn Chắc', '❤️', 'hp', 'small', 1, 19.8, -54.3, '{"hp_pct": 0.05}'::jsonb, '+5% HP'),
+  ('hp_3', 'Sinh Lực III', '❤️', 'hp', 'small', 1, -7.1, -67.6, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
+  ('hp_k', 'Thành Trì Sống', '❤️', 'hp', 'keystone', 3, 0.0, -86.7, '{"hp_pct": 0.25, "atk_pct": -0.1}'::jsonb, '+25% HP tối đa, −10% ATK'),
+  ('atk_1', 'Sức Mạnh', '⚔️', 'atk', 'small', 1, 14.7, -8.5, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
+  ('atk_2', 'Sức Mạnh II', '⚔️', 'atk', 'small', 1, 29.4, -17.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
+  ('atk_n', 'Khát Chiến', '⚔️', 'atk', 'notable', 2, 44.2, -25.5, '{"atk_pct": 0.06, "crit": 0.02}'::jsonb, '+6% ATK, +2% chí mạng'),
+  ('atk_side', 'Đồ Tể', '⚔️', 'atk', 'small', 1, 56.9, -10.0, '{"atk_pct": 0.04}'::jsonb, '+4% ATK'),
+  ('atk_3', 'Sức Mạnh III', '⚔️', 'atk', 'small', 1, 55.0, -40.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
+  ('atk_k', 'Cuồng Nộ Vô Độ', '⚔️', 'atk', 'keystone', 3, 75.1, -43.4, '{"atk_pct": 0.3, "def_pct": -0.2}'::jsonb, '+30% ATK, −20% DEF'),
+  ('crit_1', 'Nhãn Lực', '🎯', 'crit', 'small', 1, 14.7, 8.5, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
+  ('crit_2', 'Nhãn Lực II', '🎯', 'crit', 'small', 1, 29.4, 17.0, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
+  ('crit_n', 'Điểm Yếu', '🎯', 'crit', 'notable', 2, 44.2, 25.5, '{"crit": 0.03, "atk_pct": 0.02}'::jsonb, '+3% chí mạng, +2% ATK'),
+  ('crit_side', 'Tâm Nhãn', '🎯', 'crit', 'small', 1, 37.2, 44.3, '{"crit": 0.02}'::jsonb, '+2% chí mạng'),
+  ('crit_3', 'Nhãn Lực III', '🎯', 'crit', 'small', 1, 62.1, 27.7, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
+  ('crit_k', 'Mắt Tử Thần', '🎯', 'crit', 'keystone', 3, 75.1, 43.3, '{"crit_mult": 2.2, "hp_pct": -0.1}'::jsonb, 'Chí mạng gây ×2.2 (thay ×1.5), −10% HP'),
+  ('ls_1', 'Huyết Mạch', '🩸', 'ls', 'small', 1, 0.0, 17.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
+  ('ls_2', 'Huyết Mạch II', '🩸', 'ls', 'small', 1, 0.0, 34.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
+  ('ls_n', 'Hiến Tế Huyết Ma', '🩸', 'ls', 'notable', 2, 0.0, 51.0, '{"lifesteal": 0.02, "hp_pct": 0.03}'::jsonb, '+2% hút máu, +3% HP'),
+  ('ls_side', 'Huyết Khí', '🩸', 'ls', 'small', 1, -19.8, 54.3, '{"lifesteal": 0.015}'::jsonb, '+1.5% hút máu'),
+  ('ls_3', 'Huyết Mạch III', '🩸', 'ls', 'small', 1, 7.1, 67.6, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
+  ('ls_k', 'Khát Máu Vô Tận', '🩸', 'ls', 'keystone', 3, 0.0, 86.7, '{"lifesteal": 0.03, "low_hp_ls": 2, "def_pct": -0.1}'::jsonb, '+3% hút máu; HP dưới 30% thì hút máu ×2; −10% DEF'),
+  ('spd_1', 'Nhanh Nhẹn', '⚡', 'spd', 'small', 1, -14.7, 8.5, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
+  ('spd_2', 'Nhanh Nhẹn II', '⚡', 'spd', 'small', 1, -29.4, 17.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
+  ('spd_n', 'Khai Cuộc Thần Tốc', '⚡', 'spd', 'notable', 2, -44.2, 25.5, '{"opening": 1.5, "double": 0.02}'::jsonb, 'Đòn đầu mỗi trận ×1.5, +2% Đòn Kép'),
+  ('spd_side', 'Lướt Gió', '⚡', 'spd', 'small', 1, -56.9, 10.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
+  ('spd_3', 'Nhanh Nhẹn III', '⚡', 'spd', 'small', 1, -55.0, 40.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
+  ('spd_k', 'Lưỡi Dao Thủy Tinh', '⚡', 'spd', 'keystone', 3, -75.1, 43.4, '{"double": 0.12, "opening": 2.0, "hp_pct": -0.15}'::jsonb, '+12% Đòn Kép, đòn đầu ×2, −15% HP'),
+  ('def_1', 'Giáp Trụ', '🛡️', 'def', 'small', 1, -14.7, -8.5, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
+  ('def_2', 'Giáp Trụ II', '🛡️', 'def', 'small', 1, -29.4, -17.0, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
+  ('def_n', 'Lũy Thép', '🛡️', 'def', 'notable', 2, -44.2, -25.5, '{"def_pct": 0.08, "dmg_red": 0.03}'::jsonb, '+8% DEF, giảm 3% sát thương nhận'),
+  ('def_side', 'Bất Khả Xâm', '🛡️', 'def', 'small', 1, -37.2, -44.3, '{"def_pct": 0.05}'::jsonb, '+5% DEF'),
+  ('def_3', 'Giáp Trụ III', '🛡️', 'def', 'small', 1, -62.1, -27.7, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
+  ('def_k', 'Pháo Đài Bất Động', '🛡️', 'def', 'keystone', 3, -75.1, -43.4, '{"dmg_red": 0.15, "atk_pct": -0.15}'::jsonb, 'Giảm 15% sát thương nhận, −15% ATK'),
+  ('bridge_hp_atk', 'Chiến Binh Bền Bỉ', '💠', 'bridge', 'small', 1, 19.5, -33.9, '{"hp_pct": 0.02, "atk_pct": 0.02}'::jsonb, '+2% HP, +2% ATK'),
+  ('bridge_atk_crit', 'Sát Khí', '💠', 'bridge', 'small', 1, 39.1, -0.0, '{"atk_pct": 0.02, "crit": 0.01}'::jsonb, '+2% ATK, +1% chí mạng'),
+  ('bridge_crit_ls', 'Vết Cắt Sâu', '💠', 'bridge', 'small', 1, 19.5, 33.9, '{"crit": 0.01, "lifesteal": 0.005}'::jsonb, '+1% chí mạng, +0.5% hút máu'),
+  ('bridge_ls_spd', 'Huyết Tốc', '💠', 'bridge', 'small', 1, -19.6, 33.9, '{"lifesteal": 0.005, "double": 0.01}'::jsonb, '+0.5% hút máu, +1% Đòn Kép'),
+  ('bridge_spd_def', 'Linh Hoạt', '💠', 'bridge', 'small', 1, -39.1, 0.0, '{"double": 0.01, "def_pct": 0.02}'::jsonb, '+1% Đòn Kép, +2% DEF'),
+  ('bridge_def_hp', 'Hộ Thân', '💠', 'bridge', 'small', 1, -19.6, -33.9, '{"def_pct": 0.02, "hp_pct": 0.02}'::jsonb, '+2% DEF, +2% HP')
+on conflict (key) do nothing;
+
+insert into talent_edges (a, b) values
+  ('origin', 'hp_1'),
+  ('hp_1', 'hp_2'),
+  ('hp_2', 'hp_n'),
+  ('hp_n', 'hp_side'),
+  ('hp_n', 'hp_3'),
+  ('hp_3', 'hp_k'),
+  ('origin', 'atk_1'),
+  ('atk_1', 'atk_2'),
+  ('atk_2', 'atk_n'),
+  ('atk_n', 'atk_side'),
+  ('atk_n', 'atk_3'),
+  ('atk_3', 'atk_k'),
+  ('origin', 'crit_1'),
+  ('crit_1', 'crit_2'),
+  ('crit_2', 'crit_n'),
+  ('crit_n', 'crit_side'),
+  ('crit_n', 'crit_3'),
+  ('crit_3', 'crit_k'),
+  ('origin', 'ls_1'),
+  ('ls_1', 'ls_2'),
+  ('ls_2', 'ls_n'),
+  ('ls_n', 'ls_side'),
+  ('ls_n', 'ls_3'),
+  ('ls_3', 'ls_k'),
+  ('origin', 'spd_1'),
+  ('spd_1', 'spd_2'),
+  ('spd_2', 'spd_n'),
+  ('spd_n', 'spd_side'),
+  ('spd_n', 'spd_3'),
+  ('spd_3', 'spd_k'),
+  ('origin', 'def_1'),
+  ('def_1', 'def_2'),
+  ('def_2', 'def_n'),
+  ('def_n', 'def_side'),
+  ('def_n', 'def_3'),
+  ('def_3', 'def_k'),
+  ('hp_2', 'bridge_hp_atk'),
+  ('bridge_hp_atk', 'atk_2'),
+  ('atk_2', 'bridge_atk_crit'),
+  ('bridge_atk_crit', 'crit_2'),
+  ('crit_2', 'bridge_crit_ls'),
+  ('bridge_crit_ls', 'ls_2'),
+  ('ls_2', 'bridge_ls_spd'),
+  ('bridge_ls_spd', 'spd_2'),
+  ('spd_2', 'bridge_spd_def'),
+  ('bridge_spd_def', 'def_2'),
+  ('def_2', 'bridge_def_hp'),
+  ('bridge_def_hp', 'hp_2')
+on conflict do nothing;
+
+-- 2. Tính điểm + tổng hiệu ứng -------------------------------------------------------
+create or replace function public.talent_points_total(p_level int, p_tower_best int)
+returns int
+language sql
+immutable
+as $$ select (greatest(1, p_level) / 2) + (least(100, greatest(0, p_tower_best)) / 10); $$;
+
+-- plpgsql (không phải sql) để get_character_stats tạo trước bảng cây vẫn được
+-- (get_talent_totals: xem gần get_character_stats)
+create or replace function public.get_talent_state(p_character_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int; v_tower int; v_total int; v_spent int;
+begin
+  select c.level, c.tower_best into v_level, v_tower
+  from characters c where c.id = p_character_id and c.user_id = auth.uid();
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  v_total := talent_points_total(v_level, v_tower);
+  select coalesce(sum(n.cost), 0) into v_spent
+  from character_talents ct join talent_nodes n on n.key = ct.node_key where ct.character_id = p_character_id;
+
+  return jsonb_build_object(
+    'total', v_total, 'spent', v_spent, 'available', v_total - v_spent,
+    'learned', (select coalesce(jsonb_agg(ct.node_key), '[]'::jsonb) from character_talents ct where ct.character_id = p_character_id),
+    'totals', get_talent_totals(p_character_id),
+    'reset_cost', 30 * v_level
+  );
+end;
+$$;
+
+create or replace function public.learn_talent(p_character_id uuid, p_node_key text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int; v_tower int; v_cost int; v_kind text; v_spent int;
+begin
+  select c.level, c.tower_best into v_level, v_tower
+  from characters c where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  select n.cost, n.kind into v_cost, v_kind from talent_nodes n where n.key = p_node_key;
+  if not found or v_kind = 'start' then raise exception 'Không tìm thấy ô thiên phú này'; end if;
+
+  if exists (select 1 from character_talents ct where ct.character_id = p_character_id and ct.node_key = p_node_key) then
+    raise exception 'Đã học ô này rồi';
+  end if;
+
+  -- Phải kề ô đã học (hoặc kề tâm)
+  if not exists (
+    select 1 from talent_edges e
+    where (e.a = p_node_key or e.b = p_node_key)
+      and (case when e.a = p_node_key then e.b else e.a end) in (
+        select 'origin' union all
+        select ct.node_key from character_talents ct where ct.character_id = p_character_id)
+  ) then
+    raise exception 'Phải học ô liền kề trước';
+  end if;
+
+  select coalesce(sum(n.cost), 0) into v_spent
+  from character_talents ct join talent_nodes n on n.key = ct.node_key where ct.character_id = p_character_id;
+  if talent_points_total(v_level, v_tower) - v_spent < v_cost then
+    raise exception 'Không đủ điểm thiên phú (cần % điểm)', v_cost;
+  end if;
+
+  insert into character_talents (character_id, node_key) values (p_character_id, p_node_key);
+  return get_talent_state(p_character_id);
+end;
+$$;
+
+-- Tẩy toàn bộ cây: 30 × cấp vàng. HP hiện tại bị kẹp lại nếu vượt HP tối đa mới.
+create or replace function public.reset_talents(p_character_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_level int; v_gold int; v_cost int; v_max_hp int;
+begin
+  select c.level, c.gold into v_level, v_gold
+  from characters c where c.id = p_character_id and c.user_id = auth.uid() for update;
+  if not found then raise exception 'Không có quyền điều khiển nhân vật này'; end if;
+
+  if not exists (select 1 from character_talents ct where ct.character_id = p_character_id) then
+    raise exception 'Chưa học ô thiên phú nào';
+  end if;
+
+  v_cost := 30 * v_level;
+  if v_gold < v_cost then raise exception 'Không đủ vàng (cần % vàng)', v_cost; end if;
+
+  delete from character_talents where character_id = p_character_id;
+  update characters set gold = gold - v_cost where id = p_character_id;
+
+  select gs.max_hp into v_max_hp from get_character_stats(p_character_id) gs;
+  update characters set current_hp = least(current_hp, v_max_hp)
+  where id = p_character_id and current_hp is not null;
+
+  return get_talent_state(p_character_id);
+end;
+$$;
+
