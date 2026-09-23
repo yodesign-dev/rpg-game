@@ -52,7 +52,7 @@ create table characters (
   -- Hệ thống AP (giới hạn hành động chống nghiện)
   current_ap        int not null default 100,
   max_ap            int not null default 100,
-  ap_regen_minutes  int not null default 5,    -- +1 AP mỗi X phút
+  ap_regen_minutes  int not null default 1,    -- +1 AP mỗi X phút
   last_ap_update    timestamptz not null default now(),
   last_hp_update    timestamptz not null default now(),  -- mốc hồi HP (+2% HP tối đa mỗi phút)
   -- Điểm chỉ số: +3 mỗi cấp. Chỉ đổi được qua allocate_stats /
@@ -1467,7 +1467,7 @@ begin
       new.current_hp := null;
       new.current_ap := 100;
       new.max_ap := 100;
-      new.ap_regen_minutes := 5;
+      new.ap_regen_minutes := 1;
       new.last_ap_update := now();
       new.last_hp_update := now();
       new.created_at := now();

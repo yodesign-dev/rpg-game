@@ -139,7 +139,7 @@ export default function ExploreManager({
       {/* HP / AP hiện tại */}
       <div className="grid grid-cols-2 gap-3 mb-5">
         <Meter label="HP" value={localHp} max={maxHp} color="linear-gradient(90deg,#b06fd8,#e086b0)" note="Hồi 2%/phút" />
-        <Meter label="AP" value={localAp} max={maxAp} color="linear-gradient(90deg,#3d9e6b,#8fe0b0)" note="+1 mỗi 5 phút" />
+        <Meter label="AP" value={localAp} max={maxAp} color="linear-gradient(90deg,#3d9e6b,#8fe0b0)" note="+1 mỗi phút" />
       </div>
 
       {/* Danh sách vùng */}
