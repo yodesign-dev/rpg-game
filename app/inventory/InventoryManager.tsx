@@ -74,6 +74,7 @@ type Item = {
   heal_amount: number
   sell_price: number | null
   description: string | null
+  icon: string | null
 }
 
 type InventoryRow = {
@@ -95,7 +96,7 @@ type Recipe = {
   goldCost: number
   successRate: number
   description: string | null
-  resultItem: { id: string; key: string; name: string; rarity: string }
+  resultItem: { id: string; key: string; name: string; rarity: string; icon: string | null }
   ingredients: { item: { id: string; key: string; name: string }; quantity: number }[]
 }
 
@@ -315,7 +316,16 @@ export default function InventoryManager({
         className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
           bg-[#17140f] flex flex-col items-center justify-center gap-0.5 px-1 shrink-0`}
       >
-        <span className="text-lg">{SLOT_ICON[slotKey]}</span>
+        {item.icon ? (
+          <img
+            src={`/items/${item.icon}`}
+            alt=""
+            className="w-7 h-7"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        ) : (
+          <span className="text-lg">{SLOT_ICON[slotKey]}</span>
+        )}
         <span
           className={`${mono.className} text-[8px] text-center leading-tight line-clamp-2
             ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}
@@ -405,41 +415,56 @@ export default function InventoryManager({
                   className={`rounded-sm border p-4 flex items-center justify-between gap-4
                     ${row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2c261c] bg-[#17140f]'}`}
                 >
-                  <div>
-                    <p className={rarityClass}>
-                      {item.name}
-                      {row.quantity > 1 && (
-                        <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {item.icon && (
+                      <div
+                        className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+                          bg-[#0d0b09] flex items-center justify-center shrink-0`}
+                      >
+                        <img
+                          src={`/items/${item.icon}`}
+                          alt=""
+                          className="w-8 h-8"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className={rarityClass}>
+                        {item.name}
+                        {row.quantity > 1 && (
+                          <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
+                        )}
+                      </p>
+                      {item.description && (
+                        <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                          {item.description}
+                        </p>
                       )}
-                    </p>
-                    {item.description && (
-                      <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
-                        {item.description}
+                      <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
+                        {item.type === 'weapon' &&
+                          `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
+                        {item.type === 'armor' &&
+                          [
+                            item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
+                            item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
+                        {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
                       </p>
-                    )}
-                    <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
-                      {item.type === 'weapon' &&
-                        `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
-                      {item.type === 'armor' &&
-                        [
-                          item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
-                          item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
-                      {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
-                    </p>
-                    {hasAffix && (
-                      <p className={`${mono.className} text-[11px] text-[#e0b050] mt-0.5`}>
-                        {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
-                        {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
-                        {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
-                      </p>
-                    )}
+                      {hasAffix && (
+                        <p className={`${mono.className} text-[11px] text-[#e0b050] mt-0.5`}>
+                          {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
+                          {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
+                          {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     {row.equipped && (
                       <button
                         onClick={() => unequip(row)}
@@ -541,14 +566,29 @@ export default function InventoryManager({
               return (
                 <div key={recipe.id} className="rounded-sm border border-[#2c261c] bg-[#17140f] p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className={RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}>
-                        {recipe.name}
-                      </p>
-                      <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
-                        {Math.round(recipe.successRate * 100)}% thành công
-                        {recipe.goldCost > 0 && ` · ${recipe.goldCost} vàng`}
-                      </p>
+                    <div className="flex items-center gap-3 min-w-0">
+                      {recipe.resultItem.icon && (
+                        <div
+                          className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[recipe.resultItem.rarity] ?? RARITY_BORDER.common}
+                            bg-[#0d0b09] flex items-center justify-center shrink-0`}
+                        >
+                          <img
+                            src={`/items/${recipe.resultItem.icon}`}
+                            alt=""
+                            className="w-8 h-8"
+                            style={{ imageRendering: 'pixelated' }}
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <p className={RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}>
+                          {recipe.name}
+                        </p>
+                        <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                          {Math.round(recipe.successRate * 100)}% thành công
+                          {recipe.goldCost > 0 && ` · ${recipe.goldCost} vàng`}
+                        </p>
+                      </div>
                     </div>
                     <button
                       onClick={() => craft(recipe)}

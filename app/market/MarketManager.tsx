@@ -14,6 +14,13 @@ const RARITY_COLOR: Record<string, string> = {
   legendary: 'text-[#e0b050]',
 }
 
+const RARITY_BORDER: Record<string, string> = {
+  common: 'border-[#4a4230]',
+  rare: 'border-[#4a6b7a]',
+  epic: 'border-[#6b4a7a]',
+  legendary: 'border-[#8a6a1f]',
+}
+
 type ShopItem = {
   id: string
   key: string
@@ -27,6 +34,7 @@ type ShopItem = {
   bonus_hp: number
   buy_price: number | null
   description: string | null
+  icon: string | null
 }
 
 export default function MarketManager({
@@ -103,25 +111,40 @@ export default function MarketManager({
               key={item.id}
               className="rounded-sm border border-[#2c261c] bg-[#17140f] p-4 flex items-center justify-between gap-4"
             >
-              <div>
-                <p className={rarityClass}>{item.name}</p>
-                {item.description && (
-                  <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
-                    {item.description}
-                  </p>
+              <div className="flex items-center gap-3 min-w-0">
+                {item.icon && (
+                  <div
+                    className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+                      bg-[#0d0b09] flex items-center justify-center shrink-0`}
+                  >
+                    <img
+                      src={`/items/${item.icon}`}
+                      alt=""
+                      className="w-8 h-8"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  </div>
                 )}
-                <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
-                  {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
-                  {item.type === 'weapon' &&
-                    `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
-                  {item.type === 'armor' &&
-                    [
-                      item.bonus_def ? `+${item.bonus_def} DEF` : null,
-                      item.bonus_hp ? `+${item.bonus_hp} HP` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                </p>
+                <div>
+                  <p className={rarityClass}>{item.name}</p>
+                  {item.description && (
+                    <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                      {item.description}
+                    </p>
+                  )}
+                  <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
+                    {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
+                    {item.type === 'weapon' &&
+                      `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
+                    {item.type === 'armor' &&
+                      [
+                        item.bonus_def ? `+${item.bonus_def} DEF` : null,
+                        item.bonus_hp ? `+${item.bonus_hp} HP` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                  </p>
+                </div>
               </div>
 
               <button
