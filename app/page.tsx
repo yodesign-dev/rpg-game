@@ -1,19 +1,21 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
 import { getEquippedStats } from '@/lib/equipped-stats'
-import AccountActions from './AccountActions'
+import ClassArt from './ClassArt'
+import SettingsMenu from './SettingsMenu'
+import BottomNav from './BottomNav'
+import DungeonCta from './DungeonCta'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
-const CLASS_ACCENT: Record<string, { bar: string; text: string }> = {
-  warrior:  { bar: 'bg-[#8c3f3f]', text: 'text-[#c98787]' },
-  mage:     { bar: 'bg-[#4a4e8c]', text: 'text-[#9ea2d6]' },
-  archer:   { bar: 'bg-[#3d6b52]', text: 'text-[#8fc4a8]' },
-  assassin: { bar: 'bg-[#6b4a7a]', text: 'text-[#b79bc4]' },
+const CLASS_TAG: Record<string, string> = {
+  warrior: 'text-[#e0a3a3] bg-[#8c3f3f]/[0.18] border-[#8c3f3f]/40',
+  mage: 'text-[#b3b7e8] bg-[#4a4e8c]/[0.18] border-[#4a4e8c]/40',
+  archer: 'text-[#9fd8b8] bg-[#3d6b52]/[0.18] border-[#3d6b52]/40',
+  assassin: 'text-[#d9c3ee] bg-[#6b4a7a]/[0.18] border-[#6b4a7a]/40',
 }
 
 export default async function CharacterPage() {
@@ -51,105 +53,155 @@ export default async function CharacterPage() {
   const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level + equippedStats.bonusHp
   const currentHp = character.current_hp ?? maxHp
 
-  const accent = CLASS_ACCENT[cls.key] ?? CLASS_ACCENT.warrior
   const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
   const hpPct = Math.min(100, Math.round((currentHp / maxHp) * 100))
   const apPct = Math.min(100, Math.round((currentAp / character.max_ap) * 100))
+  const tag = CLASS_TAG[cls.key] ?? CLASS_TAG.warrior
 
   return (
-    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
-      <div className="mx-auto max-w-2xl">
-        <header className="text-center mb-10">
-          <p className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
-            Chương {character.current_chapter}
-          </p>
-          <div className="text-4xl mb-2">{cls.icon}</div>
-          <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>
-            {character.name}
-          </h1>
-          <p className={`${mono.className} text-sm ${accent.text} mt-1`}>
-            {cls.name} · Cấp {character.level}
-          </p>
-        </header>
+    <main
+      className="min-h-screen text-[#f2ede4] pb-28"
+      style={{
+        background:
+          'radial-gradient(480px 260px at 15% 0%, rgba(107,74,122,.28), transparent 60%),' +
+          'radial-gradient(480px 260px at 100% 10%, rgba(143,196,168,.12), transparent 55%),' +
+          '#07070a',
+      }}
+    >
+      <div className="mx-auto max-w-2xl px-4 pt-6">
 
-        <div className="rounded-sm border border-[#2c261c] bg-[#17140f] p-6 space-y-5">
-          <StatRow label="EXP" value={`${character.exp} / ${character.exp_to_next}`} pct={expPct} barClass="bg-[#8a7f68]" />
-          <StatRow label="HP" value={`${currentHp} / ${maxHp}`} pct={hpPct} barClass={accent.bar} />
-          <StatRow
-            label="AP"
-            value={`${currentAp} / ${character.max_ap}`}
-            pct={apPct}
-            barClass="bg-[#6b8a5a]"
-            note={
-              nextApMinutes !== null
-                ? `Hồi tiếp trong ${nextApMinutes} phút`
-                : 'Đã đầy'
-            }
-          />
-
-          <div className="flex items-center justify-between pt-2 border-t border-[#2c261c]">
-            <span className={`${mono.className} text-xs tracking-widest text-[#8a7f68]`}>
-              VÀNG
-            </span>
-            <span className={`${mono.className} text-lg text-[#f1e6c8]`}>
-              {character.gold}
-            </span>
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-5">
+          <SettingsMenu characterId={character.id} characterName={character.name} />
+          <p className={`${mono.className} text-[10px] tracking-[3px] text-[#83809a]`}>
+            CHƯƠNG {character.current_chapter}
+          </p>
+          <div
+            className={`${mono.className} flex items-center gap-1.5 bg-white/[0.06] border border-[#e0b050]/35
+              rounded-full pl-2 pr-3 py-1.5`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e0b050" strokeWidth="1.6">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M9.5 10a2.5 2 0 0 1 2.5-1.5c1.5 0 2.5.6 2.5 1.7 0 2.3-5 1.3-5 3.6 0 1.1 1 1.7 2.5 1.7s2.5-.6 2.5-1.5" strokeLinecap="round" />
+              <path d="M12 8v8" strokeLinecap="round" />
+            </svg>
+            <span className="text-[13px] font-semibold text-[#f1dba0]">{character.gold}</span>
           </div>
         </div>
 
-        <nav className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8">
-          <NavCard href="/dungeon" label="Dungeon" icon="🗝️" />
-          <NavCard href="/skills" label="Kỹ Năng" icon="✨" />
-          <NavCard href="/inventory" label="Túi Đồ" icon="🎒" />
-          <NavCard href="/market" label="Chợ" icon="🛒" />
-          <NavCard href="/quests" label="Nhiệm Vụ" icon="📜" />
-        </nav>
+        {/* Character glass card */}
+        <div className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-[18px] mb-3.5">
+          <div className="flex items-center gap-3.5 mb-4">
+            <div className="relative w-[62px] h-[62px] shrink-0">
+              <div
+                className="absolute inset-0 rounded-full p-[2px]"
+                style={{ background: 'linear-gradient(135deg,#b06fd8,#6b4a7a 60%,#3a2a48)' }}
+              >
+                <div className="w-full h-full rounded-full bg-[#16121c] flex items-center justify-center">
+                  <ClassArt classKey={cls.key} seed={character.id} size={40} />
+                </div>
+              </div>
+              <div
+                className={`${mono.className} absolute -right-1 -bottom-1 bg-[#1c1526] border-[1.5px] border-[#b06fd8]
+                  rounded-full px-1.5 text-[9px] font-bold text-[#e3caf5]`}
+              >
+                Lv.{character.level}
+              </div>
+            </div>
+            <div className="flex-grow min-w-0">
+              <div className={`${display.className} text-[17px] font-semibold text-white tracking-[.3px] truncate`}>
+                {character.name}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className={`${mono.className} text-[9px] tracking-wide border rounded-full px-2 py-[3px] ${tag}`}>
+                  {cls.name.toUpperCase()}
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <AccountActions characterId={character.id} characterName={character.name} />
+          <div className="flex flex-col gap-3">
+            <StatBar
+              label="EXP"
+              value={`${character.exp} / ${character.exp_to_next}`}
+              pct={expPct}
+              gradient="linear-gradient(90deg,#a3925a,#e0c072)"
+              glow="rgba(224,192,114,.5)"
+              icon={
+                <path d="M12 3 14.5 9.5 21 10.5 16 15 17.5 21.5 12 18 6.5 21.5 8 15 3 10.5 9.5 9.5Z" strokeLinejoin="round" />
+              }
+              iconColor="#c9b982"
+            />
+            <StatBar
+              label="HP"
+              value={`${currentHp} / ${maxHp}`}
+              pct={hpPct}
+              gradient="linear-gradient(90deg,#b06fd8,#e086b0)"
+              glow="rgba(224,134,176,.55)"
+              icon={<path d="M12 20 4 13a5 5 0 0 1 7-7l1 1 1-1a5 5 0 0 1 7 7Z" strokeLinejoin="round" strokeLinecap="round" />}
+              iconColor="#e0839c"
+            />
+            <StatBar
+              label="AP"
+              value={`${currentAp} / ${character.max_ap}`}
+              pct={apPct}
+              gradient="linear-gradient(90deg,#3d9e6b,#8fe0b0)"
+              glow="rgba(143,224,176,.5)"
+              icon={<path d="M13 3 5 14h6l-1 7 8-11h-6Z" strokeLinejoin="round" strokeLinecap="round" />}
+              iconColor="#8fe0b0"
+              note={nextApMinutes !== null ? `Hồi tiếp trong ${nextApMinutes} phút` : 'Đã đầy'}
+            />
+          </div>
+        </div>
+
+        <DungeonCta />
+
       </div>
+
+      <BottomNav />
     </main>
   )
 }
 
-function StatRow({
+function StatBar({
   label,
   value,
   pct,
-  barClass,
+  gradient,
+  glow,
+  icon,
+  iconColor,
   note,
 }: {
   label: string
   value: string
   pct: number
-  barClass: string
+  gradient: string
+  glow: string
+  icon: React.ReactNode
+  iconColor: string
   note?: string
 }) {
-  const mono2 = mono.className
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className={`${mono2} text-xs tracking-widest text-[#8a7f68]`}>{label}</span>
-        <span className={`${mono2} text-xs text-[#a89b7f]`}>{value}</span>
+      <div className={`${mono.className} flex justify-between text-[9px] tracking-[1.5px] text-[#83809a] mb-[5px]`}>
+        <span className="flex items-center gap-[5px]">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.8">
+            {icon}
+          </svg>
+          {label}
+        </span>
+        <span className="text-[#c7c2d3]">{value}</span>
       </div>
-      <div className="h-2 bg-[#2c261c] rounded-full overflow-hidden">
-        <div className={`h-full ${barClass}`} style={{ width: `${pct}%` }} />
+      <div className="h-[6px] rounded-full bg-white/[0.07] overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: gradient, boxShadow: `0 0 8px ${glow}` }}
+        />
       </div>
       {note && (
-        <p className={`${mono2} text-[10px] text-[#6b6249] mt-1 text-right`}>{note}</p>
+        <p className={`${mono.className} text-[9px] text-[#5c5a6e] text-right mt-1`}>{note}</p>
       )}
     </div>
-  )
-}
-
-function NavCard({ href, label, icon }: { href: string; label: string; icon: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col items-center gap-2 rounded-sm border border-[#2c261c] bg-[#17140f]
-        py-6 hover:border-[#4a4230] transition-colors"
-    >
-      <span className="text-2xl">{icon}</span>
-      <span className={`${mono.className} text-xs tracking-widest text-[#a89b7f]`}>{label}</span>
-    </Link>
   )
 }

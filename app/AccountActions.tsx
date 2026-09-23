@@ -46,23 +46,23 @@ export default function AccountActions({
   }
 
   return (
-    <div className="mt-10 pt-6 border-t border-[#2c261c] flex flex-col items-center gap-4">
+    <div className="flex flex-col items-stretch gap-3">
       {!confirmingDelete ? (
-        <div className="flex items-center gap-6">
+        <>
           <button
             onClick={signOut}
             disabled={signingOut}
-            className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f] disabled:opacity-40`}
+            className={`${mono.className} text-left text-xs text-[#a89b7f] hover:text-[#f1e6c8] disabled:opacity-40 py-1.5`}
           >
             {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}
           </button>
           <button
             onClick={() => setConfirmingDelete(true)}
-            className={`${mono.className} text-xs text-[#8c3f3f] hover:text-[#c98787]`}
+            className={`${mono.className} text-left text-xs text-[#c98787] hover:text-[#e0a3a3] py-1.5`}
           >
             Xoá nhân vật
           </button>
-        </div>
+        </>
       ) : (
         <div className="w-full max-w-sm rounded-sm border border-[#8c3f3f] bg-[#1d1512] p-5 space-y-3">
           <p className={`${mono.className} text-xs text-[#c98787] leading-relaxed`}>

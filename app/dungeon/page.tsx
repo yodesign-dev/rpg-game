@@ -4,6 +4,7 @@ import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
 import { getEquippedStats } from '@/lib/equipped-stats'
+import BottomNav from '../BottomNav'
 import FloorList from './FloorList'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
@@ -57,7 +58,7 @@ export default async function DungeonPage() {
   )
 
   return (
-    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
+    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8">
           <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
@@ -95,6 +96,7 @@ export default async function DungeonPage() {
           </>
         )}
       </div>
+      <BottomNav />
     </main>
   )
 }
