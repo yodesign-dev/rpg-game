@@ -814,7 +814,7 @@ create or replace function public.simulate_fight(
   p_enemy_name text, p_enemy_hp int, p_enemy_atk int, p_enemy_def int,
   p_damage_multiplier numeric, p_with_log boolean
 )
-returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_log jsonb)
+returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb)
 language plpgsql
 volatile
 as $$
@@ -828,6 +828,7 @@ declare
   v_log jsonb := '[]'::jsonb;
   v_win boolean;
   v_timed_out boolean := false;
+  v_dmg_taken int := 0;
 begin
   while v_char_hp > 0 and v_enemy_hp > 0 and v_turn < 30 loop
     v_turn := v_turn + 1;
@@ -858,6 +859,7 @@ begin
 
     v_enemy_dmg := greatest(1, p_enemy_atk - p_char_def) * p_damage_multiplier * (1 - p_dmg_reduction);
     v_char_hp := greatest(0, v_char_hp - round(v_enemy_dmg));
+    v_dmg_taken := v_dmg_taken + round(v_enemy_dmg);
 
     if p_with_log then
       v_log := v_log || jsonb_build_object(
@@ -881,7 +883,7 @@ begin
     end if;
   end if;
 
-  return query select v_win, v_timed_out, v_char_hp, v_log;
+  return query select v_win, v_timed_out, v_char_hp, v_dmg_taken, v_log;
 end;
 $$;
 
@@ -1681,6 +1683,8 @@ declare
   v_is_boss boolean;
   v_exp_multiplier numeric; v_damage_multiplier numeric;
   v_win boolean; v_timed_out boolean;
+  v_dmg_taken int; v_fight_log jsonb;
+  v_last_fight jsonb := null;
   v_hp int;
   v_turn int;
   v_turns_completed int := 0;
@@ -1760,15 +1764,20 @@ begin
     select exp_multiplier, damage_multiplier into v_exp_multiplier, v_damage_multiplier
     from calculate_combat_scaling(v_level, v_enemy.level);
 
-    select f.out_win, f.out_timed_out, f.out_hp_left
-      into v_win, v_timed_out, v_hp
+    select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log
+      into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log
     from simulate_fight(
       v_char_atk, v_char_def, v_hp, v_max_hp,
       v_crit_chance, v_lifesteal, v_dmg_reduction,
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
       v_enemy.name, v_enemy.hp, v_enemy.atk, v_enemy.def,
-      v_damage_multiplier, false
+      v_damage_multiplier, true
     ) f;
+
+    -- Chỉ giữ log từng đòn của trận cuối (nút "Xem trận cuối" trên web)
+    v_last_fight := jsonb_build_object(
+      'turn', v_turn, 'enemy', v_enemy.name, 'level', v_enemy.level, 'boss', v_is_boss, 'log', v_fight_log
+    );
 
     v_fight_exp := 0; v_fight_gold := 0;
     v_fight_drops := '[]'::jsonb;
@@ -1802,6 +1811,7 @@ begin
       'boss', v_is_boss,
       'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
       'hp_left', v_hp,
+      'dmg_taken', v_dmg_taken,
       'exp', v_fight_exp,
       'gold', v_fight_gold,
       'drops', v_fight_drops
@@ -1854,7 +1864,8 @@ begin
     'max_hp', v_max_hp,
     'ap_left', v_current_ap - v_zone.ap_cost,
     'drops', v_drops,
-    'fights', v_fights
+    'fights', v_fights,
+    'last_fight', v_last_fight
   );
 end;
 $$;

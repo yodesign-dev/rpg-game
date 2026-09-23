@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
@@ -33,9 +33,26 @@ type Fight = {
   boss: boolean
   result: 'win' | 'lose' | 'flee'
   hp_left: number
+  dmg_taken: number
   exp: number
   gold: number
   drops: string[]
+}
+
+type LastFight = {
+  turn: number
+  enemy: string
+  log: {
+    turn: number
+    actor: 'character' | 'enemy' | 'system'
+    skill?: string
+    damage?: number
+    crit?: boolean
+    enemy_hp_left?: number
+    enemy_name?: string
+    character_hp_left?: number
+    message?: string
+  }[]
 }
 
 type ExploreResult = {
@@ -53,6 +70,7 @@ type ExploreResult = {
   ap_left: number
   drops: { key: string; name: string; icon: string | null; rarity: string; quantity: number }[]
   fights: Fight[]
+  last_fight: LastFight | null
 }
 
 const TURN_PRESETS = [10, 25, 50, 100]
@@ -82,7 +100,7 @@ export default function ExploreManager({
   const [turns, setTurns] = useState(100)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<ExploreResult | null>(null)
+  const [result, setResult] = useState<{ data: ExploreResult; zone: Zone } | null>(null)
   const [localHp, setLocalHp] = useState(currentHp)
   const [localAp, setLocalAp] = useState(currentAp)
 
@@ -110,7 +128,7 @@ export default function ExploreManager({
     }
 
     const res = data as ExploreResult
-    setResult(res)
+    setResult({ data: res, zone })
     setLocalHp(res.hp_left)
     setLocalAp(res.ap_left)
     router.refresh()
@@ -175,10 +193,7 @@ export default function ExploreManager({
                           key={d.key}
                           className="flex items-center gap-1 rounded-full bg-white/[0.05] border border-white/[0.08] pl-1 pr-2 py-0.5"
                         >
-                          {d.icon && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={`/items/${d.icon}`} alt="" width={16} height={16} className="[image-rendering:pixelated]" />
-                          )}
+                          <ItemIcon icon={d.icon} size={16} />
                           <span className={RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}>{d.name}</span>
                           {d.bossOnly && <span className="text-[#f0a8a8]">· boss</span>}
                         </span>
@@ -246,7 +261,7 @@ export default function ExploreManager({
 
       {error && <p className="text-sm text-[#e09595] mt-3">{error}</p>}
 
-      {result && <ResultPanel result={result} />}
+      {result && <ResultPanel result={result.data} zone={result.zone} />}
     </div>
   )
 }
@@ -269,78 +284,79 @@ function Meter({ label, value, max, color, note }: { label: string; value: numbe
   )
 }
 
-function ResultPanel({ result }: { result: ExploreResult }) {
-  const [showFights, setShowFights] = useState(false)
+function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
+  const [showLastFight, setShowLastFight] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const bosses = result.fights.filter((f) => f.boss && f.result === 'win').length
+  const dropInfo = Object.fromEntries(result.drops.map((d) => [d.key, d]))
+
+  // Cuộn tới lượt cuối — thường là lượt người chơi quan tâm nhất
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
+  }, [result])
 
   return (
     <div className="mt-5 rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4">
-      <p className={`text-base font-semibold ${result.died ? 'text-[#e09595]' : 'text-[#8fe0b0]'}`}>
-        {result.died
-          ? `💀 Gục ngã ở lượt ${result.turns_completed}/${result.turns_requested}`
-          : `✓ Hoàn thành ${result.turns_completed} lượt`}
-      </p>
-      <p className="text-xs text-[#a29fb3] mt-1">
-        {result.zone} · thắng {result.wins} trận
-        {bosses > 0 && ` · hạ ${bosses} boss 🏆`}
-        {result.died && ' · trận cuối không có thưởng'}
+      <p className="text-base font-semibold text-white">
+        {result.died ? '💀 Gục ngã' : '🗺️ Thám hiểm hoàn tất'}
+        <span className="font-normal text-[#a29fb3]">
+          {' '}— {zone.icon} {zone.name} (Lv{zone.minLevel}–{zone.maxLevel}) · {result.turns_completed}/{result.turns_requested} lượt
+        </span>
       </p>
 
-      <div className="grid grid-cols-3 gap-2 mt-4">
-        <Stat label="EXP" value={`+${result.exp_gained}`} />
-        <Stat label="VÀNG" value={`+${result.gold_gained}`} />
-        <Stat label="HP" value={`${result.hp_left}/${result.max_hp}`} />
+      {/* Log từng lượt */}
+      <div
+        ref={listRef}
+        className="mt-3 max-h-96 overflow-y-auto rounded-xl bg-black/30 border border-white/[0.06] divide-y divide-white/[0.05]"
+      >
+        {result.fights.map((f) => (
+          <TurnRow key={f.turn} fight={f} maxHp={result.max_hp} dropInfo={dropInfo} />
+        ))}
       </div>
 
-      {result.leveled_up && (
-        <p className="text-sm text-[#f0c060] mt-3">⭐ Lên cấp {result.new_level}! Vào trang nhân vật để cộng điểm chỉ số.</p>
+      {result.last_fight && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowLastFight((v) => !v)}
+            className="mt-3 text-xs text-[#a29fb3] hover:text-white"
+          >
+            📜 {showLastFight ? 'Ẩn' : 'Xem'} chi tiết trận cuối (T{result.last_fight.turn} · {result.last_fight.enemy})
+          </button>
+          {showLastFight && <LastFightLog fight={result.last_fight} />}
+        </>
       )}
+
+      {/* Tổng kết */}
+      <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-1.5 text-sm">
+        <p className="text-white">
+          ✨ Tổng: <b className="text-[#f0c060]">+{result.exp_gained} EXP</b> ·{' '}
+          <b className="text-[#f0c060]">+{result.gold_gained} Vàng</b>
+          <span className="text-[#a29fb3]">
+            {' '}· thắng {result.wins} trận{bosses > 0 && ` · hạ ${bosses} boss 🏆`}
+          </span>
+        </p>
+        <p className="text-[#e5e1ed]">
+          ❤️ HP còn: {result.hp_left}/{result.max_hp}
+          <span className="text-[#7d7a8c]"> · hồi 2%/phút</span>
+        </p>
+        {result.died && <p className="text-[#e09595]">Trận cuối gục ngã nên không có thưởng.</p>}
+        {result.leveled_up && (
+          <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}! Vào trang nhân vật để cộng điểm chỉ số.</p>
+        )}
+      </div>
 
       {result.drops.length > 0 && (
-        <div className="mt-4">
-          <p className="text-xs tracking-wide text-[#7d7a8c] mb-2">ĐỒ NHẶT ĐƯỢC</p>
-          <div className="flex flex-wrap gap-2">
-            {result.drops.map((d) => (
-              <span
-                key={d.key}
-                className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.08] px-2 py-1 text-sm"
-              >
-                {d.icon && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={`/items/${d.icon}`} alt="" width={20} height={20} className="[image-rendering:pixelated]" />
-                )}
-                <span className={RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}>{d.name}</span>
-                <span className="text-[#a29fb3]">×{d.quantity}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => setShowFights((v) => !v)}
-        className="mt-4 text-xs text-[#a29fb3] hover:text-white"
-      >
-        {showFights ? '▾ Ẩn' : '▸ Xem'} chi tiết {result.fights.length} trận
-      </button>
-
-      {showFights && (
-        <div className="mt-2 max-h-72 overflow-y-auto space-y-1 pr-1">
-          {result.fights.map((f) => (
-            <div key={f.turn} className="flex items-center gap-2 text-xs">
-              <span className="w-8 text-[#7d7a8c]">#{f.turn}</span>
-              <span className="w-4">{f.result === 'win' ? '✓' : f.result === 'flee' ? '⏱' : '✗'}</span>
-              <span className={`flex-grow truncate ${f.boss ? 'text-[#f0a8a8]' : 'text-[#e5e1ed]'}`}>
-                {f.boss && '👑 '}
-                {f.enemy} <span className="text-[#7d7a8c]">Lv{f.level}</span>
-                {f.drops.length > 0 && <span className="text-[#f0c060]"> 🎁</span>}
-              </span>
-              <span className="text-[#7d7a8c] shrink-0">
-                {f.result === 'win' ? `+${f.exp} exp` : f.result === 'flee' ? 'rút lui' : 'gục'}
-              </span>
-              <span className="w-12 text-right text-[#a29fb3] shrink-0">{f.hp_left} HP</span>
-            </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {result.drops.map((d) => (
+            <span
+              key={d.key}
+              className="flex items-center gap-1.5 rounded-xl bg-white/[0.05] border border-white/[0.08] px-2 py-1 text-sm"
+            >
+              <ItemIcon icon={d.icon} size={20} />
+              <span className={RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}>{d.name}</span>
+              <span className="text-[#a29fb3]">×{d.quantity}</span>
+            </span>
           ))}
         </div>
       )}
@@ -348,11 +364,84 @@ function ResultPanel({ result }: { result: ExploreResult }) {
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function TurnRow({
+  fight: f,
+  maxHp,
+  dropInfo,
+}: {
+  fight: Fight
+  maxHp: number
+  dropInfo: Record<string, { name: string; icon: string | null; rarity: string }>
+}) {
+  const pct = Math.max(0, Math.min(100, (f.hp_left / Math.max(1, maxHp)) * 100))
+  const barColor = pct > 50 ? '#8fe0b0' : pct > 20 ? '#f0c060' : '#e07070'
+
   return (
-    <div className="rounded-xl bg-white/[0.04] px-2 py-2 text-center">
-      <div className="text-[11px] tracking-wide text-[#7d7a8c]">{label}</div>
-      <div className="text-sm font-semibold text-white">{value}</div>
+    <div className={`px-3 py-2 text-xs ${f.result === 'lose' ? 'bg-[#e07070]/[0.08]' : ''}`}>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span>{f.result === 'win' ? '✅' : f.result === 'flee' ? '⏱️' : '💀'}</span>
+        <b className="text-white">T{f.turn}</b>
+        <span className={f.boss ? 'text-[#f0a8a8] font-semibold' : 'text-[#e5e1ed]'}>
+          {f.boss && '👑 '}
+          {f.enemy} <span className="text-[#7d7a8c] font-normal">Lv{f.level}</span>
+        </span>
+        <span className="text-[#7d7a8c]">→</span>
+        {f.result === 'win' ? (
+          <span className="text-[#f0c060]">
+            +{f.exp}EXP +{f.gold}G
+          </span>
+        ) : (
+          <span className={f.result === 'flee' ? 'text-[#f0c060]' : 'text-[#e09595]'}>
+            {f.result === 'flee' ? 'rút lui' : 'gục ngã'}
+          </span>
+        )}
+        {f.drops.map((key, i) => (
+          <span key={i} className="flex items-center gap-1 text-[#b8e0c8]">
+            <ItemIcon icon={dropInfo[key]?.icon ?? null} size={14} />+{dropInfo[key]?.name ?? key}
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 mt-1.5">
+        <span className="w-12 shrink-0 text-[#e09595]">😓 -{f.dmg_taken}</span>
+        <span className="text-[#e0839c]">❤️</span>
+        <div className="flex-grow h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barColor }} />
+        </div>
+        <span className="shrink-0 text-[#a29fb3] tabular-nums">
+          {f.hp_left}/{maxHp}
+        </span>
+      </div>
     </div>
   )
+}
+
+function LastFightLog({ fight }: { fight: LastFight }) {
+  return (
+    <div className="mt-2 max-h-64 overflow-y-auto space-y-1 border-l border-white/[0.1] pl-3">
+      {fight.log.map((e, i) => (
+        <p key={i} className="text-[11px] leading-relaxed">
+          {e.actor === 'character' ? (
+            <span className="text-[#c9c4d4]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> ⚔️ {e.skill} gây{' '}
+              <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
+              {e.crit && ' (chí mạng!)'} · {fight.enemy} còn {e.enemy_hp_left} HP
+            </span>
+          ) : e.actor === 'enemy' ? (
+            <span className="text-[#e09595]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> 🩸 {e.enemy_name} đánh {e.damage} · bạn còn{' '}
+              {e.character_hp_left} HP
+            </span>
+          ) : (
+            <span className="text-[#f0c060]">⏱️ {e.message}</span>
+          )}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+function ItemIcon({ icon, size }: { icon: string | null; size: number }) {
+  if (!icon) return null
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={`/items/${icon}`} alt="" width={size} height={size} className="[image-rendering:pixelated]" />
 }
