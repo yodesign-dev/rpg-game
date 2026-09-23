@@ -60,9 +60,9 @@ export default function MarketManager({
       return
     }
 
-    const res = (Array.isArray(data) ? data[0] : data) as { gold: number } | undefined
+    const res = (Array.isArray(data) ? data[0] : data) as { new_gold: number } | undefined
     if (res) {
-      setLocalGold(res.gold)
+      setLocalGold(res.new_gold)
       setNotice(`Đã mua ${item.name}`)
     }
   }

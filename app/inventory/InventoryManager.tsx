@@ -78,15 +78,15 @@ export default function InventoryManager({
     }
 
     const res = (Array.isArray(data) ? data[0] : data) as
-      | { current_hp: number; quantity_left: number }
+      | { new_current_hp: number; new_quantity: number }
       | undefined
 
     if (res) {
-      setLocalHp(res.current_hp)
+      setLocalHp(res.new_current_hp)
       setRows((prev) =>
-        res.quantity_left <= 0
+        res.new_quantity <= 0
           ? prev.filter((r) => r.id !== row.id)
-          : prev.map((r) => (r.id === row.id ? { ...r, quantity: res.quantity_left } : r))
+          : prev.map((r) => (r.id === row.id ? { ...r, quantity: res.new_quantity } : r))
       )
     }
   }

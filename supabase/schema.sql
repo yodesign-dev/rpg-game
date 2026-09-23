@@ -612,7 +612,7 @@ insert into items (key, name, type, rarity, heal_amount, buy_price, sell_price, 
 on conflict (key) do nothing;
 
 create or replace function public.buy_item(p_character_id uuid, p_item_id uuid, p_quantity int default 1)
-returns table(gold int, quantity int)
+returns table(new_gold int, new_quantity int)
 language plpgsql
 security definer
 set search_path = 'public'
@@ -671,7 +671,7 @@ end;
 $$;
 
 create or replace function public.use_item(p_character_id uuid, p_inventory_id uuid)
-returns table(current_hp int, max_hp int, quantity_left int)
+returns table(new_current_hp int, new_max_hp int, new_quantity int)
 language plpgsql
 security definer
 set search_path = 'public'
