@@ -1,8 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Các route bắt buộc phải đăng nhập mới vào được
-const PROTECTED_PATHS = ['/create-character', '/character', '/dungeon']
+// Các route bắt buộc phải đăng nhập mới vào được.
+// Không đưa /character vào đây: đó là route xử lý link xác nhận email
+// (?code=...), phải truy cập được TRƯỚC KHI đăng nhập vì chính nó tạo ra
+// session — chặn ở đây sẽ làm hỏng luôn cả việc xác nhận email lẫn tạo ra
+// vòng lặp redirect (middleware đá /login -> /character, trang /character
+// không thấy code lại đá về /login).
+const PROTECTED_PATHS = ['/create-character', '/dungeon']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -47,7 +52,7 @@ export async function updateSession(request: NextRequest) {
   // Đã đăng nhập rồi mà vẫn cố vào /login thì đá thẳng qua trang nhân vật
   if (path === '/login' && user) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/character'
+    redirectUrl.pathname = '/'
     const redirectResponse = NextResponse.redirect(redirectUrl)
     response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie))
     return redirectResponse

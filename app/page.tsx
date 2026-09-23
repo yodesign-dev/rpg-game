@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
+import { applyApRegen } from '@/lib/ap-regen'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
@@ -43,30 +44,7 @@ export default async function CharacterPage() {
   const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
   const currentHp = character.current_hp ?? maxHp
 
-  // --- Tính hồi AP kiểu lazy: dựa vào thời gian trôi qua từ lần cập nhật gần nhất ---
-  const lastUpdate = new Date(character.last_ap_update)
-  const elapsedMs = Date.now() - lastUpdate.getTime()
-  const elapsedMinutes = Math.floor(elapsedMs / 60000)
-  const regenTicks = Math.floor(elapsedMinutes / character.ap_regen_minutes)
-
-  let currentAp = character.current_ap
-  let nextApMinutes: number | null = null
-
-  if (regenTicks > 0 && character.current_ap < character.max_ap) {
-    const newAp = Math.min(character.max_ap, character.current_ap + regenTicks)
-    const newLastUpdate = new Date(
-      lastUpdate.getTime() + regenTicks * character.ap_regen_minutes * 60000
-    )
-    await supabase
-      .from('characters')
-      .update({ current_ap: newAp, last_ap_update: newLastUpdate.toISOString() })
-      .eq('id', character.id)
-    currentAp = newAp
-  }
-
-  if (currentAp < character.max_ap) {
-    nextApMinutes = character.ap_regen_minutes - (elapsedMinutes % character.ap_regen_minutes)
-  }
+  const { currentAp, nextApMinutes } = await applyApRegen(supabase, character)
 
   const accent = CLASS_ACCENT[cls.key] ?? CLASS_ACCENT.warrior
   const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
@@ -118,6 +96,7 @@ export default async function CharacterPage() {
           <NavCard href="/dungeon" label="Dungeon" icon="🗝️" />
           <NavCard href="/skills" label="Kỹ Năng" icon="✨" />
           <NavCard href="/inventory" label="Túi Đồ" icon="🎒" />
+          <NavCard href="/market" label="Chợ" icon="🛒" />
           <NavCard href="/quests" label="Nhiệm Vụ" icon="📜" />
         </nav>
       </div>

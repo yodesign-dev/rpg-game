@@ -14,7 +14,7 @@ export default async function Home({
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      redirect('/character')
+      redirect('/')
     }
     redirect('/login?error=Link xác nhận không hợp lệ hoặc đã hết hạn')
   }

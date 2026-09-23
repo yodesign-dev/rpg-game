@@ -18,13 +18,14 @@ type Floor = {
 
 type CombatLogEntry = {
   turn: number
-  actor: 'character' | 'enemy'
+  actor: 'character' | 'enemy' | 'system'
   skill?: string
   enemy_name?: string
-  damage: number
+  damage?: number
   crit?: boolean
   enemy_hp_left?: number
   character_hp_left?: number
+  message?: string
 }
 
 type CombatResult = {
@@ -36,6 +37,7 @@ type CombatResult = {
   leveled_up: boolean
   new_level: number
   combat_log: CombatLogEntry[]
+  timed_out?: boolean
 }
 
 export default function FloorList({
@@ -61,11 +63,13 @@ export default function FloorList({
   const [resultFloorId, setResultFloorId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [localAp, setLocalAp] = useState(currentAp)
+  const [localHp, setLocalHp] = useState(currentHp)
   const [localHighestCleared, setLocalHighestCleared] = useState(highestCleared)
 
   async function fight(floor: Floor) {
     setError(null)
     setResult(null)
+    setResultFloorId(floor.id)
     setFightingFloor(floor.id)
 
     const supabase = createClient()
@@ -91,8 +95,8 @@ export default function FloorList({
     }
 
     setResult(res)
-    setResultFloorId(floor.id)
     setLocalAp((ap) => ap - apCost)
+    setLocalHp(res.remaining_hp)
     if (res.win && floor.floor_number > localHighestCleared) {
       setLocalHighestCleared(floor.floor_number)
     }
@@ -102,7 +106,7 @@ export default function FloorList({
   return (
     <div className="space-y-4">
       <div className={`${mono.className} text-center text-xs text-[#6b6249] mb-2`}>
-        AP còn lại: {localAp}
+        AP còn lại: {localAp} · HP: {localHp} / {maxHp}
       </div>
 
       {floors.map((floor) => {
@@ -165,26 +169,48 @@ export default function FloorList({
 }
 
 function CombatResultPanel({ result }: { result: CombatResult }) {
+  const outcomeLabel = result.timed_out
+    ? '⏱ Bất phân thắng bại'
+    : result.win
+      ? '✓ Chiến thắng'
+      : '✗ Thất bại'
+  const outcomeColor = result.timed_out
+    ? 'text-[#e0b050]'
+    : result.win
+      ? 'text-[#8fc4a8]'
+      : 'text-[#c98787]'
+
   return (
     <div className="mt-2 rounded-sm border border-[#2c261c] bg-[#0d0b09] p-4">
-      <p className={`${mono.className} text-sm mb-3 ${result.win ? 'text-[#8fc4a8]' : 'text-[#c98787]'}`}>
-        {result.win ? '✓ Chiến thắng' : '✗ Thất bại'}
-      </p>
+      <div className="flex items-center justify-between mb-3">
+        <p className={`${mono.className} text-sm ${outcomeColor}`}>{outcomeLabel}</p>
+        <p className={`${mono.className} text-[10px] text-[#6b6249]`}>
+          {result.combat_log.filter((e) => e.actor !== 'system').length} lượt đối kháng
+        </p>
+      </div>
 
-      <div className="max-h-48 overflow-y-auto space-y-1 mb-3 pr-1">
+      <div className={`${mono.className} text-[10px] tracking-widest text-[#6b6249] mb-2`}>
+        NHẬT KÝ TRẬN ĐẤU
+      </div>
+      <div className="max-h-64 overflow-y-auto space-y-1.5 mb-3 pr-1 border-l border-[#2c261c] pl-3">
         {result.combat_log.map((entry, i) => (
           <p key={i} className={`${mono.className} text-[11px] leading-relaxed`}>
             {entry.actor === 'character' ? (
               <span className="text-[#a89b7f]">
-                Lượt {entry.turn}: bạn dùng <span className="text-[#f1e6c8]">{entry.skill}</span>, gây{' '}
+                <span className="text-[#6b6249]">#{entry.turn}</span> ⚔️ Bạn dùng{' '}
+                <span className="text-[#f1e6c8]">{entry.skill}</span>, gây{' '}
                 <span className="text-[#c9a678]">{entry.damage}</span> sát thương
                 {entry.crit && <span className="text-[#e0b050]"> (Chí mạng!)</span>}
+                <span className="text-[#6b6249]"> · quái còn {entry.enemy_hp_left} HP</span>
+              </span>
+            ) : entry.actor === 'enemy' ? (
+              <span className="text-[#6b6249]">
+                <span className="text-[#6b6249]">#{entry.turn}</span> 🗡 {entry.enemy_name} phản đòn, gây{' '}
+                <span className="text-[#c98787]">{entry.damage}</span> sát thương
+                <span className="text-[#6b6249]"> · bạn còn {entry.character_hp_left} HP</span>
               </span>
             ) : (
-              <span className="text-[#6b6249]">
-                Lượt {entry.turn}: {entry.enemy_name} phản đòn, gây{' '}
-                <span className="text-[#c98787]">{entry.damage}</span> sát thương
-              </span>
+              <span className="text-[#e0b050]">⚠ {entry.message}</span>
             )}
           </p>
         ))}

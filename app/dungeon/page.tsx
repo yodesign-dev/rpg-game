@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
+import { applyApRegen } from '@/lib/ap-regen'
 import FloorList from './FloorList'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
@@ -26,11 +27,14 @@ export default async function DungeonPage() {
 
   if (!character) redirect('/create-character')
 
-  const { data: dungeon } = await supabase
-    .from('dungeons')
-    .select('*, dungeon_floors(*)')
-    .eq('chapter_number', character.current_chapter)
-    .maybeSingle()
+  const [{ data: dungeon }, { currentAp }] = await Promise.all([
+    supabase
+      .from('dungeons')
+      .select('*, dungeon_floors(*)')
+      .eq('chapter_number', character.current_chapter)
+      .maybeSingle(),
+    applyApRegen(supabase, character),
+  ])
 
   const { data: clearedRuns } = await supabase
     .from('dungeon_runs')
@@ -54,7 +58,7 @@ export default async function DungeonPage() {
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8">
-          <Link href="/character" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
+          <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
             ← Về nhân vật
           </Link>
         </div>
@@ -74,7 +78,7 @@ export default async function DungeonPage() {
             </header>
 
             <div className={`${mono.className} text-center text-xs text-[#6b6249] mb-10`}>
-              AP hiện tại: {character.current_ap} / {character.max_ap} · cần {dungeon.ap_cost} AP mỗi lần vào tầng
+              AP hiện tại: {currentAp} / {character.max_ap} · cần {dungeon.ap_cost} AP mỗi lần vào tầng
             </div>
 
             <FloorList
@@ -83,7 +87,7 @@ export default async function DungeonPage() {
               highestCleared={highestCleared}
               currentHp={character.current_hp ?? maxHp}
               maxHp={maxHp}
-              currentAp={character.current_ap}
+              currentAp={currentAp}
               apCost={dungeon.ap_cost}
             />
           </>
