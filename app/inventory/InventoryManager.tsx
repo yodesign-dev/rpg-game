@@ -33,6 +33,16 @@ function tierOf(row: { rarity: string | null; items: { rarity: string } }) {
   return row.rarity ?? row.items.rarity
 }
 
+const RARITY_RANK: Record<string, number> = { common: 0, rare: 1, epic: 2, legendary: 3 }
+
+// Khớp inventory_sell_price (schema.sql): trang bị có tier riêng bán gấp đôi
+// mỗi bậc trên tier gốc; đồ mua ở chợ/vật phẩm gộp chồng bán đúng giá gốc.
+function sellPriceOf(row: InventoryRow) {
+  const base = row.items.sell_price ?? 0
+  const steps = Math.max(0, (RARITY_RANK[tierOf(row)] ?? 0) - (RARITY_RANK[row.items.rarity] ?? 0))
+  return base * 2 ** steps * row.quantity
+}
+
 // Chế tạo có "tăng tỉ lệ": tốn gấp đôi vàng, tối thiểu 50 — khớp craft_item
 function boostCost(goldCost: number) {
   return Math.max(50, goldCost * 2)
@@ -158,6 +168,11 @@ export default function InventoryManager({
   const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null)
   const [craftResult, setCraftResult] = useState<{ text: string; rarity: string | null; ok: boolean } | null>(null)
   const [boosted, setBoosted] = useState<Record<string, boolean>>({})
+  const [sellMode, setSellMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirmSell, setConfirmSell] = useState(false)
+  const [selling, setSelling] = useState(false)
+  const [sellResult, setSellResult] = useState<string | null>(null)
 
   async function useItem(row: InventoryRow) {
     setError(null)
@@ -296,6 +311,71 @@ export default function InventoryManager({
     setPendingRecipeId(null)
   }
 
+  const sellable = rows.filter((r) => !r.equipped)
+  const selectedRows = rows.filter((r) => selected.has(r.id))
+  const selectedGold = selectedRows.reduce((sum, r) => sum + sellPriceOf(r), 0)
+  const selectedHighTier = selectedRows.some((r) => (RARITY_RANK[tierOf(r)] ?? 0) >= 2)
+
+  function toggleRow(id: string) {
+    setConfirmSell(false)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Chọn nhanh: chọn hết đồ chưa mặc khớp điều kiện; nếu đã chọn hết rồi thì bỏ chọn
+  function toggleWhere(match: (r: InventoryRow) => boolean) {
+    setConfirmSell(false)
+    const ids = sellable.filter(match).map((r) => r.id)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const allIn = ids.length > 0 && ids.every((id) => next.has(id))
+      ids.forEach((id) => (allIn ? next.delete(id) : next.add(id)))
+      return next
+    })
+  }
+
+  function exitSellMode() {
+    setSellMode(false)
+    setSelected(new Set())
+    setConfirmSell(false)
+  }
+
+  async function sellSelected() {
+    if (selectedRows.length === 0) return
+    if (!confirmSell) {
+      setConfirmSell(true)
+      return
+    }
+    setSelling(true)
+    setError(null)
+    const ids = selectedRows.map((r) => r.id)
+    const { data, error: rpcError } = await createClient().rpc('sell_items', {
+      p_character_id: characterId,
+      p_inventory_ids: ids,
+    })
+    setSelling(false)
+    setConfirmSell(false)
+
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+
+    const res = (Array.isArray(data) ? data[0] : data) as
+      | { out_sold: number; out_gold_gained: number; out_new_gold: number }
+      | undefined
+    if (res) {
+      setLocalGold(res.out_new_gold)
+      setSellResult(`Đã bán ${res.out_sold} món, nhận ${res.out_gold_gained} vàng.`)
+    }
+    setRows((prev) => prev.filter((r) => !ids.includes(r.id)))
+    setSelected(new Set())
+  }
+
   const groups = TYPE_ORDER.map((type) => ({
     type,
     rows: rows.filter((r) => r.items.type === type),
@@ -410,6 +490,61 @@ export default function InventoryManager({
         </p>
       )}
 
+      {rows.length > 0 && (
+        <div className={`${mono.className} space-y-3`}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[#8a7f68]">Vàng: {localGold}</span>
+            <button
+              onClick={() => (sellMode ? exitSellMode() : (setSellMode(true), setSellResult(null)))}
+              className={`text-xs border px-3 py-2 rounded-sm transition-colors ${
+                sellMode
+                  ? 'border-[#8a7f68] text-[#f1e6c8] bg-[#2c261c]'
+                  : 'border-[#e0b050]/60 text-[#e0b050] hover:bg-[#e0b050]/10'
+              }`}
+            >
+              {sellMode ? 'Xong' : '💰 Bán đồ'}
+            </button>
+          </div>
+
+          {sellResult && <p className="text-xs text-[#8fc4a8]">{sellResult}</p>}
+
+          {sellMode && (
+            <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3 space-y-2">
+              <p className="text-[11px] text-[#8a7f68]">
+                Chọn nhanh (bấm lần nữa để bỏ chọn). Đồ đang mặc không bao giờ bị chọn.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {TYPE_ORDER.map((type) => {
+                  const n = sellable.filter((r) => r.items.type === type).length
+                  if (n === 0) return null
+                  return (
+                    <QuickChip key={type} onClick={() => toggleWhere((r) => r.items.type === type)}>
+                      {TYPE_LABEL[type]?.toLowerCase() ?? type} ({n})
+                    </QuickChip>
+                  )
+                })}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.keys(RARITY_LABEL).map((tier) => {
+                  const match = (r: InventoryRow) =>
+                    (r.items.type === 'weapon' || r.items.type === 'armor') && tierOf(r) === tier
+                  const n = sellable.filter(match).length
+                  if (n === 0) return null
+                  return (
+                    <QuickChip key={tier} className={RARITY_COLOR[tier]} onClick={() => toggleWhere(match)}>
+                      trang bị {RARITY_LABEL[tier]} ({n})
+                    </QuickChip>
+                  )
+                })}
+                {selected.size > 0 && (
+                  <QuickChip onClick={() => (setSelected(new Set()), setConfirmSell(false))}>bỏ chọn hết</QuickChip>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {groups.map((group) => (
         <section key={group.type}>
           <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
@@ -432,10 +567,26 @@ export default function InventoryManager({
               return (
                 <div
                   key={row.id}
+                  onClick={sellMode && !row.equipped ? () => toggleRow(row.id) : undefined}
                   className={`rounded-sm border p-4 flex items-center justify-between gap-4
-                    ${row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2c261c] bg-[#17140f]'}`}
+                    ${sellMode && selected.has(row.id)
+                      ? 'border-[#e0b050]/70 bg-[#221c10]'
+                      : row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2c261c] bg-[#17140f]'}
+                    ${sellMode && !row.equipped ? 'cursor-pointer' : ''}
+                    ${sellMode && row.equipped ? 'opacity-40' : ''}`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
+                    {sellMode && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Chọn bán ${item.name}`}
+                        checked={selected.has(row.id)}
+                        disabled={row.equipped}
+                        onChange={() => toggleRow(row.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="accent-[#e0b050] w-4 h-4 shrink-0"
+                      />
+                    )}
                     {item.icon && (
                       <div
                         className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common}
@@ -491,6 +642,11 @@ export default function InventoryManager({
                     </div>
                   </div>
 
+                  {sellMode ? (
+                    <span className={`${mono.className} text-xs shrink-0 ${row.equipped ? 'text-[#6b6249]' : 'text-[#e0b050]'}`}>
+                      {row.equipped ? 'Đang mặc' : `${sellPriceOf(row)} vàng`}
+                    </span>
+                  ) : (
                   <div className="flex items-center gap-2 shrink-0">
                     {row.equipped && (
                       <button
@@ -552,12 +708,34 @@ export default function InventoryManager({
                       )
                     })()}
                   </div>
+                  )}
                 </div>
               )
             })}
           </div>
         </section>
       ))}
+
+      {sellMode && selected.size > 0 && (
+        <div className={`${mono.className} sticky bottom-24 z-10 rounded-sm border border-[#e0b050]/60 bg-[#1a150c]/95 backdrop-blur p-3 flex items-center justify-between gap-3`}>
+          <div className="text-xs min-w-0">
+            <p className="text-[#f1e6c8]">
+              Đã chọn {selected.size} món · <span className="text-[#e0b050]">+{selectedGold} vàng</span>
+            </p>
+            {confirmSell && selectedHighTier && (
+              <p className="text-[#e09595] mt-0.5">Có đồ Sử Thi/Huyền Thoại trong danh sách!</p>
+            )}
+          </div>
+          <button
+            onClick={sellSelected}
+            disabled={selling}
+            className="text-xs border border-[#e0b050] text-[#100e0c] bg-[#e0b050] px-4 py-2 rounded-sm font-semibold
+              disabled:opacity-40 hover:bg-[#f0c060] whitespace-nowrap"
+          >
+            {selling ? 'Đang bán…' : confirmSell ? 'Chắc chắn bán?' : 'Bán'}
+          </button>
+        </div>
+      )}
 
       <section>
         <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
@@ -675,5 +853,25 @@ export default function InventoryManager({
         )}
       </section>
     </div>
+  )
+}
+
+function QuickChip({
+  children,
+  onClick,
+  className = 'text-[#a89b7f]',
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${mono.className} text-[11px] border border-[#2c261c] bg-[#17140f] hover:border-[#8a7f68] rounded-full px-2.5 py-1 ${className}`}
+    >
+      {children}
+    </button>
   )
 }
