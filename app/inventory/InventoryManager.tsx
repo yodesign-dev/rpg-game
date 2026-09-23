@@ -47,13 +47,49 @@ type InventoryRow = {
 export default function InventoryManager({
   characterId,
   items,
+  currentHp,
+  maxHp,
 }: {
   characterId: string
   items: InventoryRow[]
+  currentHp: number
+  maxHp: number
 }) {
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [localHp, setLocalHp] = useState(currentHp)
+
+  async function useItem(row: InventoryRow) {
+    setError(null)
+    setPendingRowId(row.id)
+
+    const supabase = createClient()
+    const { data, error: rpcError } = await supabase.rpc('use_item', {
+      p_character_id: characterId,
+      p_inventory_id: row.id,
+    })
+
+    setPendingRowId(null)
+
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+
+    const res = (Array.isArray(data) ? data[0] : data) as
+      | { current_hp: number; quantity_left: number }
+      | undefined
+
+    if (res) {
+      setLocalHp(res.current_hp)
+      setRows((prev) =>
+        res.quantity_left <= 0
+          ? prev.filter((r) => r.id !== row.id)
+          : prev.map((r) => (r.id === row.id ? { ...r, quantity: res.quantity_left } : r))
+      )
+    }
+  }
 
   async function equip(row: InventoryRow) {
     setError(null)
@@ -121,14 +157,6 @@ export default function InventoryManager({
     setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, equipped: false } : r)))
   }
 
-  if (rows.length === 0) {
-    return (
-      <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
-        Túi đồ trống. Đánh quái trong dungeon để nhặt trang bị.
-      </p>
-    )
-  }
-
   const groups = TYPE_ORDER.map((type) => ({
     type,
     rows: rows.filter((r) => r.items.type === type),
@@ -136,8 +164,18 @@ export default function InventoryManager({
 
   return (
     <div className="space-y-8">
+      <div className={`${mono.className} text-center text-xs text-[#6b6249] -mt-4`}>
+        HP hiện tại: {localHp} / {maxHp}
+      </div>
+
       {error && (
         <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
+      )}
+
+      {rows.length === 0 && (
+        <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+          Túi đồ trống. Đánh quái trong dungeon để nhặt trang bị.
+        </p>
       )}
 
       {groups.map((group) => (
@@ -205,6 +243,17 @@ export default function InventoryManager({
                         {isPending ? '…' : 'Trang bị'}
                       </button>
                     ))}
+
+                  {item.type === 'consumable' && (
+                    <button
+                      onClick={() => useItem(row)}
+                      disabled={isPending || localHp >= maxHp}
+                      className={`${mono.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
+                        disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
+                    >
+                      {isPending ? '…' : localHp >= maxHp ? 'HP đầy' : 'Dùng'}
+                    </button>
+                  )}
                 </div>
               )
             })}

@@ -27,11 +27,14 @@ export default async function DungeonPage() {
 
   if (!character) redirect('/create-character')
 
-  const { data: dungeon } = await supabase
-    .from('dungeons')
-    .select('*, dungeon_floors(*)')
-    .eq('chapter_number', character.current_chapter)
-    .maybeSingle()
+  const [{ data: dungeon }, { currentAp }] = await Promise.all([
+    supabase
+      .from('dungeons')
+      .select('*, dungeon_floors(*)')
+      .eq('chapter_number', character.current_chapter)
+      .maybeSingle(),
+    applyApRegen(supabase, character),
+  ])
 
   const { data: clearedRuns } = await supabase
     .from('dungeon_runs')
@@ -47,8 +50,6 @@ export default async function DungeonPage() {
   const cls = character.classes as { base_hp: number; hp_per_level: number }
   const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
 
-  const { currentAp } = await applyApRegen(supabase, character)
-
   const floors = ((dungeon?.dungeon_floors as any[]) ?? []).sort(
     (a, b) => a.floor_number - b.floor_number
   )
@@ -57,7 +58,7 @@ export default async function DungeonPage() {
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8">
-          <Link href="/character" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
+          <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
             ← Về nhân vật
           </Link>
         </div>

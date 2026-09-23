@@ -76,7 +76,7 @@ export default function CreateCharacterPage() {
       return
     }
 
-    window.location.href = '/character'
+    window.location.href = '/'
   }
 
   return (

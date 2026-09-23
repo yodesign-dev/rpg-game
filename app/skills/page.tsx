@@ -26,17 +26,18 @@ export default async function SkillsPage() {
 
   if (!character) redirect('/create-character')
 
-  const { data: skills } = await supabase
-    .from('skills')
-    .select('*')
-    .eq('class_id', character.class_id)
-    .order('skill_type')
-    .order('unlock_level')
-
-  const { data: equipped } = await supabase
-    .from('character_equipped_skills')
-    .select('id, skill_id')
-    .eq('character_id', character.id)
+  const [{ data: skills }, { data: equipped }] = await Promise.all([
+    supabase
+      .from('skills')
+      .select('*')
+      .eq('class_id', character.class_id)
+      .order('skill_type')
+      .order('unlock_level'),
+    supabase
+      .from('character_equipped_skills')
+      .select('id, skill_id')
+      .eq('character_id', character.id),
+  ])
 
   const cls = character.classes as { name: string; icon: string | null }
 

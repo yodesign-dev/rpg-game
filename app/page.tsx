@@ -96,6 +96,7 @@ export default async function CharacterPage() {
           <NavCard href="/dungeon" label="Dungeon" icon="🗝️" />
           <NavCard href="/skills" label="Kỹ Năng" icon="✨" />
           <NavCard href="/inventory" label="Túi Đồ" icon="🎒" />
+          <NavCard href="/market" label="Chợ" icon="🛒" />
           <NavCard href="/quests" label="Nhiệm Vụ" icon="📜" />
         </nav>
       </div>

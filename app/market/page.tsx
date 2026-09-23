@@ -2,12 +2,12 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
-import InventoryManager from './InventoryManager'
+import MarketManager from './MarketManager'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
-export default async function InventoryPage() {
+export default async function MarketPage() {
   const supabase = await createClient()
 
   const {
@@ -26,14 +26,11 @@ export default async function InventoryPage() {
 
   if (!character) redirect('/create-character')
 
-  const { data: inventory } = await supabase
-    .from('inventory')
-    .select('id, quantity, equipped, items(*)')
-    .eq('character_id', character.id)
-
-  const cls = character.classes as { base_hp: number; hp_per_level: number }
-  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
-  const currentHp = character.current_hp ?? maxHp
+  const { data: items } = await supabase
+    .from('items')
+    .select('*')
+    .not('buy_price', 'is', null)
+    .order('buy_price', { ascending: true })
 
   return (
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
@@ -45,18 +42,13 @@ export default async function InventoryPage() {
         </div>
 
         <header className="text-center mb-10">
-          <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>Túi Đồ</h1>
+          <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>Chợ</h1>
           <p className={`${mono.className} text-xs text-[#8a7f68] mt-2`}>
-            {character.gold} vàng · HP {currentHp} / {maxHp}
+            {character.gold} vàng
           </p>
         </header>
 
-        <InventoryManager
-          characterId={character.id}
-          items={(inventory as any) ?? []}
-          currentHp={currentHp}
-          maxHp={maxHp}
-        />
+        <MarketManager characterId={character.id} gold={character.gold} items={items ?? []} />
       </div>
     </main>
   )
