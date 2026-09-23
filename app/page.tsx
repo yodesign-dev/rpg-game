@@ -71,49 +71,49 @@ export default async function CharacterPage() {
       <div className="mx-auto max-w-2xl px-4 pt-6">
 
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-6">
           <SettingsMenu characterId={character.id} characterName={character.name} />
-          <p className={`${mono.className} text-[10px] tracking-[3px] text-[#83809a]`}>
+          <p className={`${mono.className} text-sm tracking-[3px] text-[#a29fb3]`}>
             CHƯƠNG {character.current_chapter}
           </p>
           <div
-            className={`${mono.className} flex items-center gap-1.5 bg-white/[0.06] border border-[#e0b050]/35
-              rounded-full pl-2 pr-3 py-1.5`}
+            className={`${mono.className} flex items-center gap-2 bg-white/[0.06] border border-[#e0b050]/35
+              rounded-full pl-2.5 pr-3.5 py-2`}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e0b050" strokeWidth="1.6">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0b050" strokeWidth="1.6">
               <circle cx="12" cy="12" r="8.5" />
               <path d="M9.5 10a2.5 2 0 0 1 2.5-1.5c1.5 0 2.5.6 2.5 1.7 0 2.3-5 1.3-5 3.6 0 1.1 1 1.7 2.5 1.7s2.5-.6 2.5-1.5" strokeLinecap="round" />
               <path d="M12 8v8" strokeLinecap="round" />
             </svg>
-            <span className="text-[13px] font-semibold text-[#f1dba0]">{character.gold}</span>
+            <span className="text-base font-semibold text-[#f1dba0]">{character.gold}</span>
           </div>
         </div>
 
         {/* Character glass card */}
-        <div className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-[18px] mb-3.5">
-          <div className="flex items-center gap-3.5 mb-4">
-            <div className="relative w-[62px] h-[62px] shrink-0">
+        <div className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="relative w-20 h-20 shrink-0">
               <div
                 className="absolute inset-0 rounded-full p-[2px]"
                 style={{ background: 'linear-gradient(135deg,#b06fd8,#6b4a7a 60%,#3a2a48)' }}
               >
                 <div className="w-full h-full rounded-full bg-[#16121c] flex items-center justify-center">
-                  <ClassArt classKey={cls.key} seed={character.id} size={40} />
+                  <ClassArt classKey={cls.key} seed={character.id} size={52} />
                 </div>
               </div>
               <div
-                className={`${mono.className} absolute -right-1 -bottom-1 bg-[#1c1526] border-[1.5px] border-[#b06fd8]
-                  rounded-full px-1.5 text-[9px] font-bold text-[#e3caf5]`}
+                className={`${mono.className} absolute -right-1.5 -bottom-1.5 bg-[#1c1526] border-2 border-[#b06fd8]
+                  rounded-full px-2 py-0.5 text-xs font-bold text-[#e3caf5]`}
               >
                 Lv.{character.level}
               </div>
             </div>
             <div className="flex-grow min-w-0">
-              <div className={`${display.className} text-[17px] font-semibold text-white tracking-[.3px] truncate`}>
+              <div className={`${display.className} text-2xl font-semibold text-white tracking-[.3px] truncate`}>
                 {character.name}
               </div>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <span className={`${mono.className} text-[9px] tracking-wide border rounded-full px-2 py-[3px] ${tag}`}>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className={`${mono.className} text-xs tracking-wide border rounded-full px-2.5 py-1 ${tag}`}>
                   {cls.name.toUpperCase()}
                 </span>
               </div>
@@ -184,23 +184,23 @@ function StatBar({
 }) {
   return (
     <div>
-      <div className={`${mono.className} flex justify-between text-[9px] tracking-[1.5px] text-[#83809a] mb-[5px]`}>
-        <span className="flex items-center gap-[5px]">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.8">
+      <div className={`${mono.className} flex items-center justify-between text-xs tracking-wide text-[#a29fb3] mb-2`}>
+        <span className="flex items-center gap-1.5 font-medium">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.8">
             {icon}
           </svg>
           {label}
         </span>
-        <span className="text-[#c7c2d3]">{value}</span>
+        <span className="text-sm text-[#e5e1ed] font-medium">{value}</span>
       </div>
-      <div className="h-[6px] rounded-full bg-white/[0.07] overflow-hidden">
+      <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden">
         <div
           className="h-full rounded-full"
           style={{ width: `${pct}%`, background: gradient, boxShadow: `0 0 8px ${glow}` }}
         />
       </div>
       {note && (
-        <p className={`${mono.className} text-[9px] text-[#5c5a6e] text-right mt-1`}>{note}</p>
+        <p className={`${mono.className} text-xs text-[#7d7a8c] text-right mt-1.5`}>{note}</p>
       )}
     </div>
   )
