@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
 
@@ -37,6 +38,7 @@ export default function MarketManager({
   gold: number
   items: ShopItem[]
 }) {
+  const router = useRouter()
   const [localGold, setLocalGold] = useState(gold)
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +67,7 @@ export default function MarketManager({
     if (res) {
       setLocalGold(res.new_gold)
       setNotice(`Đã mua ${item.name}`)
+      router.refresh()
     }
   }
 

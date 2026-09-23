@@ -26,7 +26,7 @@ export default async function InventoryPage() {
 
   if (!character) redirect('/create-character')
 
-  const { data: inventory } = await supabase
+  const { data: inventory, error: inventoryError } = await supabase
     .from('inventory')
     .select('id, quantity, equipped, equip_slot, items(*)')
     .eq('character_id', character.id)
@@ -59,6 +59,12 @@ export default async function InventoryPage() {
             {character.gold} vàng · HP {currentHp} / {maxHp}
           </p>
         </header>
+
+        {inventoryError && (
+          <p className={`${mono.className} text-xs text-[#c98787] text-center mb-6`}>
+            Không tải được túi đồ: {inventoryError.message}
+          </p>
+        )}
 
         <InventoryManager
           characterId={character.id}
