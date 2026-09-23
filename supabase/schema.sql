@@ -650,8 +650,8 @@ begin
 
   -- 8. Thưởng nếu thắng: EXP (qua hàm add_experience có sẵn), rơi đồ, ghi nhận đã qua tầng
   if v_win then
-    select leveled_up, new_level into v_leveled_up, v_new_level
-    from add_experience(p_character_id, v_exp_gained);
+    select ae.leveled_up, ae.new_level into v_leveled_up, v_new_level
+    from add_experience(p_character_id, v_exp_gained) as ae;
 
     if v_drop_item_id is not null and random() < v_drop_rate then
       select slot, coalesce(school, 'physical'), rarity
