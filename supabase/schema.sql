@@ -260,6 +260,8 @@ create policy "own characters insert" on characters
   for insert with check (auth.uid() = user_id);
 create policy "own characters update" on characters
   for update using (auth.uid() = user_id);
+create policy "own characters delete" on characters
+  for delete using (auth.uid() = user_id);
 
 create policy "own pets select" on character_pets
   for select using (

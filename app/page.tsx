@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
+import AccountActions from './AccountActions'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
@@ -99,6 +100,8 @@ export default async function CharacterPage() {
           <NavCard href="/market" label="Chợ" icon="🛒" />
           <NavCard href="/quests" label="Nhiệm Vụ" icon="📜" />
         </nav>
+
+        <AccountActions characterId={character.id} characterName={character.name} />
       </div>
     </main>
   )
