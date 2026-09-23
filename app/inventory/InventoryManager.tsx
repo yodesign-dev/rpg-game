@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/client'
+import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
@@ -126,6 +127,7 @@ type InventoryRow = {
   rolled_crit: number
   rolled_lifesteal: number
   rarity: string | null
+  legendary_effect: string | null
   items: Item
 }
 
@@ -315,7 +317,7 @@ export default function InventoryManager({
     const { data: fresh } = await supabase
       .from('inventory')
       .select(
-        'id, quantity, equipped, equip_slot, rarity, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
+        'id, quantity, equipped, equip_slot, rarity, legendary_effect, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, items(*)'
       )
       .eq('character_id', characterId)
 
@@ -666,14 +668,14 @@ export default function InventoryManager({
                 <div
                   key={row.id}
                   onClick={sellMode && !row.equipped ? () => toggleRow(row.id) : undefined}
-                  className={`rounded-sm border p-4 flex items-center justify-between gap-4
+                  className={`rounded-sm border p-4 flex flex-wrap items-center justify-between gap-3
                     ${sellMode && selected.has(row.id)
                       ? 'border-[#e0b050]/70 bg-[#221c10]'
                       : row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2c261c] bg-[#17140f]'}
                     ${sellMode && !row.equipped ? 'cursor-pointer' : ''}
                     ${sellMode && row.equipped ? 'opacity-40' : ''}`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 basis-56">
                     {sellMode && (
                       <input
                         type="checkbox"
@@ -735,6 +737,12 @@ export default function InventoryManager({
                           {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
                           {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
                           {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
+                        </p>
+                      )}
+                      {row.legendary_effect && LEGENDARY_EFFECTS[row.legendary_effect] && (
+                        <p className={`${mono.className} text-[11px] text-[#f0c060] mt-0.5`}>
+                          ✦ {LEGENDARY_EFFECTS[row.legendary_effect].name}
+                          <span className="text-[#a89b7f]"> — {LEGENDARY_EFFECTS[row.legendary_effect].description}</span>
                         </p>
                       )}
                     </div>

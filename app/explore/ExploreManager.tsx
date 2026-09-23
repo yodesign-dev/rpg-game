@@ -52,6 +52,9 @@ type LastFight = {
     enemy_name?: string
     character_hp_left?: number
     message?: string
+    double?: boolean
+    opening?: boolean
+    thorns?: number
   }[]
 }
 
@@ -424,7 +427,9 @@ function LastFightLog({ fight }: { fight: LastFight }) {
         <p key={i} className="text-[11px] leading-relaxed">
           {e.actor === 'character' ? (
             <span className="text-[#c9c4d4]">
-              <span className="text-[#7d7a8c]">#{e.turn}</span> ⚔️ {e.skill} gây{' '}
+              <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : '⚔️'}{' '}
+              {e.opening && <span className="text-[#f0c060]">Khai Cuộc! </span>}
+              {e.skill} gây{' '}
               <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
               {e.crit && ' (chí mạng!)'} · {fight.enemy} còn {e.enemy_hp_left} HP
             </span>
@@ -432,6 +437,7 @@ function LastFightLog({ fight }: { fight: LastFight }) {
             <span className="text-[#e09595]">
               <span className="text-[#7d7a8c]">#{e.turn}</span> 🩸 {e.enemy_name} đánh {e.damage} · bạn còn{' '}
               {e.character_hp_left} HP
+              {!!e.thorns && <span className="text-[#f0c060]"> · 🌵 Phản Đòn {e.thorns}</span>}
             </span>
           ) : (
             <span className="text-[#f0c060]">⏱️ {e.message}</span>

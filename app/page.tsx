@@ -9,6 +9,7 @@ import BottomNav from './BottomNav'
 import DungeonCta from './DungeonCta'
 import ExploreCta from './ExploreCta'
 import StatAllocator from './StatAllocator'
+import ActivityFeed, { type FeedEntry } from './ActivityFeed'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
@@ -49,7 +50,14 @@ export default async function CharacterPage() {
   // Hồi phục trước rồi mới đọc chỉ số (apply_regen ghi HP/AP mới vào DB)
   const regen = await applyRegen(supabase, character)
   const { currentAp, nextApMinutes } = regen
-  const stats = await getCharacterStats(supabase, character.id)
+  const [stats, { data: feed }] = await Promise.all([
+    getCharacterStats(supabase, character.id),
+    supabase
+      .from('activity_feed')
+      .select('id, character_id, character_name, kind, payload, created_at')
+      .order('created_at', { ascending: false })
+      .limit(15),
+  ])
 
   const maxHp = stats.maxHp
   const currentHp = Math.min(maxHp, regen.currentHp ?? maxHp)
@@ -176,6 +184,9 @@ export default async function CharacterPage() {
           gold={character.gold}
           totals={{ atk: stats.atk, def: stats.def, maxHp: stats.maxHp, crit: stats.critBonus }}
         />
+
+        {/* eslint-disable-next-line react-hooks/purity -- server component: thời điểm render là "bây giờ" */}
+        <ActivityFeed entries={(feed ?? []) as FeedEntry[]} myCharacterId={character.id} now={Date.now()} />
 
       </div>
 

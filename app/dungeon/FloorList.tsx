@@ -26,6 +26,9 @@ type CombatLogEntry = {
   enemy_hp_left?: number
   character_hp_left?: number
   message?: string
+  double?: boolean
+  opening?: boolean
+  thorns?: number
 }
 
 type CombatResult = {
@@ -197,7 +200,8 @@ function CombatResultPanel({ result }: { result: CombatResult }) {
           <p key={i} className={`${mono.className} text-[11px] leading-relaxed`}>
             {entry.actor === 'character' ? (
               <span className="text-[#a89b7f]">
-                <span className="text-[#6b6249]">#{entry.turn}</span> ⚔️ Bạn dùng{' '}
+                <span className="text-[#6b6249]">#{entry.turn}</span> {entry.double ? '⚡ Đòn Kép!' : '⚔️'}{' '}
+                {entry.opening && <span className="text-[#e0b050]">Khai Cuộc! </span>}Bạn dùng{' '}
                 <span className="text-[#f1e6c8]">{entry.skill}</span>, gây{' '}
                 <span className="text-[#c9a678]">{entry.damage}</span> sát thương
                 {entry.crit && <span className="text-[#e0b050]"> (Chí mạng!)</span>}
@@ -208,6 +212,7 @@ function CombatResultPanel({ result }: { result: CombatResult }) {
                 <span className="text-[#6b6249]">#{entry.turn}</span> 🗡 {entry.enemy_name} phản đòn, gây{' '}
                 <span className="text-[#c98787]">{entry.damage}</span> sát thương
                 <span className="text-[#6b6249]"> · bạn còn {entry.character_hp_left} HP</span>
+                {!!entry.thorns && <span className="text-[#e0b050]"> · 🌵 Phản Đòn {entry.thorns}</span>}
               </span>
             ) : (
               <span className="text-[#e0b050]">⚠ {entry.message}</span>
