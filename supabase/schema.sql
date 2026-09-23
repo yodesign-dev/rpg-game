@@ -722,6 +722,16 @@ update items set icon = 'swamp_venom.png' where key = 'swamp_venom';
 update items set icon = 'shadow_ore.png' where key = 'shadow_ore';
 update items set icon = 'void_shard.png' where key = 'void_shard';
 
+-- Item đầu tiên cho 5/6 khớp trang bị mới (head/boot/ring/amulet/shield) —
+-- Thắt lưng vẫn chưa có icon phù hợp trong pack, để trống thay vì gán tạm.
+insert into items (key, name, type, slot, hand, rarity, bonus_atk, bonus_def, bonus_hp, buy_price, sell_price, description, icon) values
+  ('iron_helmet', 'Nón Sắt Cũ', 'armor', 'head', null, 'common', 0, 2, 5, 30, 10, 'Mũ sắt cơ bản, bảo vệ phần đầu.', 'iron_helmet.png'),
+  ('traveler_boots', 'Giày Da Lữ Hành', 'armor', 'boot', null, 'common', 0, 1, 5, 25, 8, 'Đôi giày bền bỉ cho hành trình dài.', 'traveler_boots.png'),
+  ('ring_ruby', 'Nhẫn Bạc Đá Đỏ', 'armor', 'ring', null, 'common', 2, 0, 0, 35, 10, 'Chiếc nhẫn bạc khảm đá đỏ, tăng nhẹ sức mạnh.', 'ring_ruby.png'),
+  ('guardian_amulet', 'Bùa Hộ Mệnh', 'armor', 'amulet', null, 'common', 0, 0, 15, 40, 12, 'Bùa chú cổ xưa, gia tăng sinh lực.', 'guardian_amulet.png'),
+  ('iron_shield', 'Khiên Gỗ Bọc Sắt', 'armor', 'shield', 'one_hand', 'common', 0, 4, 0, 45, 15, 'Khiên gỗ chắc chắn, bọc viền sắt.', 'iron_shield.png')
+on conflict (key) do nothing;
+
 create or replace function public.buy_item(p_character_id uuid, p_item_id uuid, p_quantity int default 1)
 returns table(new_gold int, new_quantity int)
 language plpgsql

@@ -138,6 +138,7 @@ export default function MarketManager({
                       `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
                     {item.type === 'armor' &&
                       [
+                        item.bonus_atk ? `+${item.bonus_atk} ATK` : null,
                         item.bonus_def ? `+${item.bonus_def} DEF` : null,
                         item.bonus_hp ? `+${item.bonus_hp} HP` : null,
                       ]

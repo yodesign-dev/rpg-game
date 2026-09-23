@@ -446,6 +446,7 @@ export default function InventoryManager({
                           `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
                         {item.type === 'armor' &&
                           [
+                            item.bonus_atk + row.rolled_atk ? `+${item.bonus_atk + row.rolled_atk} ATK` : null,
                             item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
                             item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
                           ]
