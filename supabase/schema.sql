@@ -387,7 +387,7 @@ $$;
 -- Mô phỏng một lượt đánh dungeon: khóa nhân vật, tính sát thương theo lượt,
 -- trừ AP, cộng thưởng nếu thắng, ghi nhận dungeon_runs. Trả về log trận đấu.
 create or replace function public.resolve_dungeon_floor(p_character_id uuid, p_dungeon_floor_id uuid)
-returns table(win boolean, remaining_hp integer, exp_gained integer, gold_gained integer, item_dropped text, leveled_up boolean, new_level integer, combat_log jsonb)
+returns table(win boolean, remaining_hp integer, exp_gained integer, gold_gained integer, item_dropped text, leveled_up boolean, new_level integer, combat_log jsonb, timed_out boolean)
 language plpgsql
 security definer
 set search_path = 'public'
@@ -421,6 +421,7 @@ declare
   v_enemy_dmg numeric;
   v_log jsonb := '[]'::jsonb;
   v_win boolean;
+  v_timed_out boolean := false;
   v_final_hp int;
   v_was_full_ap boolean;
   -- Kết quả cộng dồn
@@ -540,6 +541,17 @@ begin
   end loop;
 
   v_win := v_enemy_cur_hp <= 0 and v_char_hp > 0;
+
+  -- Hết 30 lượt mà cả hai còn sống: không xác định được thắng thua bằng sát
+  -- thương, ghi rõ lý do vào log thay vì báo "Thất bại" mập mờ dù HP còn đầy.
+  if not v_win and v_char_hp > 0 and v_enemy_cur_hp > 0 then
+    v_timed_out := true;
+    v_log := v_log || jsonb_build_object(
+      'turn', v_turn, 'actor', 'system',
+      'message', 'Hết giới hạn lượt đánh (30 lượt), buộc phải rút lui'
+    );
+  end if;
+
   v_final_hp := case when v_win then v_char_hp else greatest(1, v_char_hp) end;
 
   -- 7. Trừ AP (luôn trừ, thắng hay thua) — reset mốc hồi AP nếu vừa tiêu từ lúc đầy
@@ -580,7 +592,8 @@ begin
     v_item_dropped,
     v_leveled_up,
     coalesce(v_new_level, v_level),
-    v_log;
+    v_log,
+    v_timed_out;
 end;
 $$;
 

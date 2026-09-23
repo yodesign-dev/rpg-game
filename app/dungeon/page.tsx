@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
+import { applyApRegen } from '@/lib/ap-regen'
 import FloorList from './FloorList'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
@@ -46,6 +47,8 @@ export default async function DungeonPage() {
   const cls = character.classes as { base_hp: number; hp_per_level: number }
   const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
 
+  const { currentAp } = await applyApRegen(supabase, character)
+
   const floors = ((dungeon?.dungeon_floors as any[]) ?? []).sort(
     (a, b) => a.floor_number - b.floor_number
   )
@@ -74,7 +77,7 @@ export default async function DungeonPage() {
             </header>
 
             <div className={`${mono.className} text-center text-xs text-[#6b6249] mb-10`}>
-              AP hiện tại: {character.current_ap} / {character.max_ap} · cần {dungeon.ap_cost} AP mỗi lần vào tầng
+              AP hiện tại: {currentAp} / {character.max_ap} · cần {dungeon.ap_cost} AP mỗi lần vào tầng
             </div>
 
             <FloorList
@@ -83,7 +86,7 @@ export default async function DungeonPage() {
               highestCleared={highestCleared}
               currentHp={character.current_hp ?? maxHp}
               maxHp={maxHp}
-              currentAp={character.current_ap}
+              currentAp={currentAp}
               apCost={dungeon.ap_cost}
             />
           </>
