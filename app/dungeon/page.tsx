@@ -39,16 +39,22 @@ export default async function DungeonPage() {
     getCharacterStats(supabase, character.id),
   ])
 
-  const { data: clearedRuns } = await supabase
-    .from('dungeon_runs')
-    .select('floor_number')
-    .eq('character_id', character.id)
-    .eq('dungeon_id', dungeon?.id)
-    .eq('status', 'cleared')
+  // Tầng đã qua lưu ở dungeon_runs.current_floor (resolve_dungeon_floor ghi
+  // một dòng 'cleared' mỗi lần thắng). Lấy tầng cao nhất để mở khóa tầng kế.
+  const { data: clearedRuns, error: clearedRunsError } = dungeon
+    ? await supabase
+        .from('dungeon_runs')
+        .select('current_floor')
+        .eq('character_id', character.id)
+        .eq('dungeon_id', dungeon.id)
+        .eq('status', 'cleared')
+        .order('current_floor', { ascending: false })
+        .limit(1)
+    : { data: [], error: null }
 
-  const highestCleared = clearedRuns?.length
-    ? Math.max(...clearedRuns.map((r) => r.floor_number))
-    : 0
+  if (clearedRunsError) throw clearedRunsError
+
+  const highestCleared = clearedRuns?.[0]?.current_floor ?? 0
 
   const maxHp = stats.maxHp
 
