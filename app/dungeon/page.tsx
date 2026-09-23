@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
-import { getEquippedStats } from '@/lib/equipped-stats'
+import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
 import FloorList from './FloorList'
 
@@ -29,14 +29,14 @@ export default async function DungeonPage() {
 
   if (!character) redirect('/create-character')
 
-  const [{ data: dungeon }, { currentAp }, equippedStats] = await Promise.all([
+  const [{ data: dungeon }, { currentAp }, stats] = await Promise.all([
     supabase
       .from('dungeons')
       .select('*, dungeon_floors(*)')
       .eq('chapter_number', character.current_chapter)
       .maybeSingle(),
     applyApRegen(supabase, character),
-    getEquippedStats(supabase, character.id),
+    getCharacterStats(supabase, character.id),
   ])
 
   const { data: clearedRuns } = await supabase
@@ -50,8 +50,7 @@ export default async function DungeonPage() {
     ? Math.max(...clearedRuns.map((r) => r.floor_number))
     : 0
 
-  const cls = character.classes as { base_hp: number; hp_per_level: number }
-  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level + equippedStats.bonusHp
+  const maxHp = stats.maxHp
 
   const floors = ((dungeon?.dungeon_floors as any[]) ?? []).sort(
     (a, b) => a.floor_number - b.floor_number

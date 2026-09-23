@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
+import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
 import InventoryManager from './InventoryManager'
 
@@ -33,6 +34,7 @@ export default async function InventoryPage() {
     { data: recipesRaw },
     { data: ingredientsRaw },
     { currentAp },
+    stats,
   ] = await Promise.all([
     supabase
       .from('inventory')
@@ -45,6 +47,7 @@ export default async function InventoryPage() {
       .from('recipe_ingredients')
       .select('recipe_id, quantity, item:items(id, key, name)'),
     applyApRegen(supabase, character),
+    getCharacterStats(supabase, character.id),
   ])
 
   const recipes = (recipesRaw ?? []).map((r: any) => ({
@@ -59,21 +62,12 @@ export default async function InventoryPage() {
       .map((ing: any) => ({ item: ing.item, quantity: ing.quantity })),
   }))
 
-  const cls = character.classes as {
-    icon: string | null
-    base_hp: number; hp_per_level: number
-    base_atk: number; atk_per_level: number
-    base_def: number; def_per_level: number
-    base_spd: number; spd_per_level: number
-  }
-  // Chưa cộng bonus từ trang bị — InventoryManager tự cộng thêm phản ứng
-  // theo state trang bị hiện tại (kể cả affix roll) để cập nhật ngay khi
-  // mặc/gỡ đồ mà không cần tải lại trang.
-  const baseMaxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level
-  const currentHp = character.current_hp ?? baseMaxHp
-  const baseAtk = cls.base_atk + (character.level - 1) * cls.atk_per_level
-  const baseDef = cls.base_def + (character.level - 1) * cls.def_per_level
-  const baseSpd = cls.base_spd + (character.level - 1) * cls.spd_per_level
+  const cls = character.classes as { icon: string | null }
+  // base* = class + cấp + điểm chỉ số, chưa cộng trang bị — InventoryManager
+  // tự cộng thêm phản ứng theo state trang bị hiện tại (kể cả affix roll) để
+  // cập nhật ngay khi mặc/gỡ đồ mà không cần tải lại trang.
+  const { baseMaxHp, baseAtk, baseDef, baseSpd } = stats
+  const currentHp = character.current_hp ?? stats.maxHp
 
   return (
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">

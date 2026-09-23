@@ -2,11 +2,12 @@ import { redirect } from 'next/navigation'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
 import { applyApRegen } from '@/lib/ap-regen'
-import { getEquippedStats } from '@/lib/equipped-stats'
+import { getCharacterStats } from '@/lib/character-stats'
 import ClassArt from './ClassArt'
 import SettingsMenu from './SettingsMenu'
 import BottomNav from './BottomNav'
 import DungeonCta from './DungeonCta'
+import StatAllocator from './StatAllocator'
 
 const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
@@ -41,16 +42,15 @@ export default async function CharacterPage() {
     key: string
     name: string
     icon: string | null
-    base_hp: number
-    hp_per_level: number
+    main_stat: string
   }
 
-  const [{ currentAp, nextApMinutes }, equippedStats] = await Promise.all([
+  const [{ currentAp, nextApMinutes }, stats] = await Promise.all([
     applyApRegen(supabase, character),
-    getEquippedStats(supabase, character.id),
+    getCharacterStats(supabase, character.id),
   ])
 
-  const maxHp = cls.base_hp + (character.level - 1) * cls.hp_per_level + equippedStats.bonusHp
+  const maxHp = stats.maxHp
   const currentHp = character.current_hp ?? maxHp
 
   const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
@@ -155,6 +155,24 @@ export default async function CharacterPage() {
         </div>
 
         <DungeonCta />
+
+        <StatAllocator
+          characterId={character.id}
+          mainStat={cls.main_stat}
+          attributes={{
+            str: character.stat_str,
+            int: character.stat_int,
+            agi: character.stat_agi,
+            dex: character.stat_dex,
+            vit: character.stat_vit,
+          }}
+          statPoints={character.stat_points}
+          autoAllocate={character.auto_allocate_stats}
+          freeResetUsed={character.free_stat_reset_used}
+          resetCost={character.level * 50}
+          gold={character.gold}
+          totals={{ atk: stats.atk, def: stats.def, maxHp: stats.maxHp, crit: stats.critBonus }}
+        />
 
       </div>
 
