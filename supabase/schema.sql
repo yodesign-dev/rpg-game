@@ -97,7 +97,8 @@ create table items (
   bonus_atk    int not null default 0,
   bonus_def    int not null default 0,
   bonus_hp     int not null default 0,
-  heal_amount  int not null default 0,         -- dùng cho potion
+  heal_amount  int not null default 0,         -- dùng cho potion hồi HP
+  restore_ap   int not null default 0,         -- dùng cho potion hồi AP — 1 item chỉ nên có 1 trong 2, không cả hai
   buy_price    int,                            -- null = không bán trong shop
   sell_price   int not null default 0,
   description  text,
@@ -701,6 +702,12 @@ insert into items (key, name, type, rarity, heal_amount, buy_price, sell_price, 
   ('potion_large', 'Bình Máu Lớn', 'consumable', 'epic', 300, 100, 30, 'Hồi ngay 300 HP')
 on conflict (key) do nothing;
 
+-- Bình hồi AP — gold sink thật: cùng giá potion_large (100 vàng) để người
+-- chơi cân nhắc dùng vàng thay vì chỉ đợi AP tự hồi, tránh vàng ứ đọng.
+insert into items (key, name, type, rarity, restore_ap, buy_price, sell_price, description, icon) values
+  ('potion_ap_large', 'Bình Hồi AP Lớn', 'consumable', 'epic', 40, 100, 30, 'Hồi ngay 40 AP', 'potion_ap_large.png')
+on conflict (key) do nothing;
+
 -- Icon pixel-art (Raven Fantasy Icons pack, /public/items/*.png) cho toàn bộ
 -- item hiện có — trước đó danh sách item chỉ hiện text, không có ảnh.
 update items set icon = 'sword_starter.png' where key = 'sword_starter';
@@ -803,20 +810,20 @@ end;
 $$;
 
 create or replace function public.use_item(p_character_id uuid, p_inventory_id uuid)
-returns table(new_current_hp int, new_max_hp int, new_quantity int)
+returns table(new_current_hp int, new_max_hp int, new_current_ap int, new_quantity int)
 language plpgsql
 security definer
 set search_path = 'public'
 as $$
 declare
   v_owner_user_id uuid;
-  v_level int; v_current_hp int; v_class_id uuid;
+  v_level int; v_current_hp int; v_current_ap int; v_max_ap int; v_class_id uuid;
   v_base_hp int; v_hp_per_level int; v_max_hp int; v_item_hp_bonus int;
-  v_item_id uuid; v_quantity int; v_type text; v_heal_amount int;
-  v_new_hp int; v_new_quantity int;
+  v_item_id uuid; v_quantity int; v_type text; v_heal_amount int; v_restore_ap int;
+  v_new_hp int; v_new_ap int; v_new_quantity int;
 begin
-  select user_id, level, current_hp, class_id
-    into v_owner_user_id, v_level, v_current_hp, v_class_id
+  select user_id, level, current_hp, current_ap, max_ap, class_id
+    into v_owner_user_id, v_level, v_current_hp, v_current_ap, v_max_ap, v_class_id
   from characters where id = p_character_id for update;
 
   if not found then raise exception 'Không tìm thấy nhân vật'; end if;
@@ -843,18 +850,32 @@ begin
     raise exception 'Không tìm thấy vật phẩm trong túi đồ';
   end if;
 
-  select type, heal_amount into v_type, v_heal_amount from items where id = v_item_id;
+  select type, heal_amount, restore_ap into v_type, v_heal_amount, v_restore_ap
+  from items where id = v_item_id;
 
-  if v_type is distinct from 'consumable' or coalesce(v_heal_amount, 0) <= 0 then
-    raise exception 'Vật phẩm này không thể sử dụng để hồi máu';
+  if v_type is distinct from 'consumable'
+     or (coalesce(v_heal_amount, 0) <= 0 and coalesce(v_restore_ap, 0) <= 0) then
+    raise exception 'Vật phẩm này không thể sử dụng';
   end if;
 
-  if v_current_hp >= v_max_hp then
-    raise exception 'HP đã đầy';
+  v_new_hp := v_current_hp;
+  v_new_ap := v_current_ap;
+
+  if coalesce(v_heal_amount, 0) > 0 then
+    if v_current_hp >= v_max_hp then
+      raise exception 'HP đã đầy';
+    end if;
+    v_new_hp := least(v_max_hp, v_current_hp + v_heal_amount);
   end if;
 
-  v_new_hp := least(v_max_hp, v_current_hp + v_heal_amount);
-  update characters set current_hp = v_new_hp where id = p_character_id;
+  if coalesce(v_restore_ap, 0) > 0 then
+    if v_current_ap >= v_max_ap then
+      raise exception 'AP đã đầy';
+    end if;
+    v_new_ap := least(v_max_ap, v_current_ap + v_restore_ap);
+  end if;
+
+  update characters set current_hp = v_new_hp, current_ap = v_new_ap where id = p_character_id;
 
   v_new_quantity := v_quantity - 1;
 
@@ -864,7 +885,7 @@ begin
     update inventory set quantity = v_new_quantity where id = p_inventory_id;
   end if;
 
-  return query select v_new_hp, v_max_hp, v_new_quantity;
+  return query select v_new_hp, v_max_hp, v_new_ap, v_new_quantity;
 end;
 $$;
 

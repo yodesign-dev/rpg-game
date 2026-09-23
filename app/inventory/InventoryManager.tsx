@@ -72,6 +72,7 @@ type Item = {
   bonus_def: number
   bonus_hp: number
   heal_amount: number
+  restore_ap: number
   sell_price: number | null
   description: string | null
   icon: string | null
@@ -111,6 +112,8 @@ export default function InventoryManager({
   baseDef,
   baseSpd,
   gold,
+  currentAp,
+  maxAp,
   recipes,
 }: {
   characterId: string
@@ -123,12 +126,15 @@ export default function InventoryManager({
   baseDef: number
   baseSpd: number
   gold: number
+  currentAp: number
+  maxAp: number
   recipes: Recipe[]
 }) {
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [localHp, setLocalHp] = useState(currentHp)
+  const [localAp, setLocalAp] = useState(currentAp)
   const [localGold, setLocalGold] = useState(gold)
   const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null)
   const [craftResult, setCraftResult] = useState<string | null>(null)
@@ -151,11 +157,12 @@ export default function InventoryManager({
     }
 
     const res = (Array.isArray(data) ? data[0] : data) as
-      | { new_current_hp: number; new_quantity: number }
+      | { new_current_hp: number; new_current_ap: number; new_quantity: number }
       | undefined
 
     if (res) {
       setLocalHp(res.new_current_hp)
+      setLocalAp(res.new_current_ap)
       setRows((prev) =>
         res.new_quantity <= 0
           ? prev.filter((r) => r.id !== row.id)
@@ -368,6 +375,9 @@ export default function InventoryManager({
               <p className={`${mono.className} text-[10px] text-[#8a7f68]`}>
                 HP {localHp} / {totalMaxHp}
               </p>
+              <p className={`${mono.className} text-[10px] text-[#6b8a5a]`}>
+                AP {localAp} / {maxAp}
+              </p>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -452,7 +462,8 @@ export default function InventoryManager({
                           ]
                             .filter(Boolean)
                             .join(' · ')}
-                        {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
+                        {item.type === 'consumable' &&
+                          (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
                         {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
                       </p>
                       {hasAffix && (
@@ -511,16 +522,20 @@ export default function InventoryManager({
                       </>
                     )}
 
-                    {item.type === 'consumable' && (
-                      <button
-                        onClick={() => useItem(row)}
-                        disabled={isPending || localHp >= totalMaxHp}
-                        className={`${mono.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
-                          disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
-                      >
-                        {isPending ? '…' : localHp >= totalMaxHp ? 'HP đầy' : 'Dùng'}
-                      </button>
-                    )}
+                    {item.type === 'consumable' && (() => {
+                      const isApPotion = item.restore_ap > 0
+                      const isFull = isApPotion ? localAp >= maxAp : localHp >= totalMaxHp
+                      return (
+                        <button
+                          onClick={() => useItem(row)}
+                          disabled={isPending || isFull}
+                          className={`${mono.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
+                            disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
+                        >
+                          {isPending ? '…' : isFull ? (isApPotion ? 'AP đầy' : 'HP đầy') : 'Dùng'}
+                        </button>
+                      )
+                    })()}
                   </div>
                 </div>
               )

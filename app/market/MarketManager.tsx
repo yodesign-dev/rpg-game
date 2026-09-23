@@ -29,6 +29,7 @@ type ShopItem = {
   hand: string | null
   rarity: string
   heal_amount: number
+  restore_ap: number
   bonus_atk: number
   bonus_def: number
   bonus_hp: number
@@ -133,7 +134,8 @@ export default function MarketManager({
                     </p>
                   )}
                   <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
-                    {item.type === 'consumable' && `Hồi ${item.heal_amount} HP`}
+                    {item.type === 'consumable' &&
+                      (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
                     {item.type === 'weapon' &&
                       `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
                     {item.type === 'armor' &&

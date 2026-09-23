@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Cinzel, JetBrains_Mono } from 'next/font/google'
 import { createClient } from '@/lib/supabase/server'
+import { applyApRegen } from '@/lib/ap-regen'
 import BottomNav from '../BottomNav'
 import InventoryManager from './InventoryManager'
 
@@ -31,6 +32,7 @@ export default async function InventoryPage() {
     { data: inventory, error: inventoryError },
     { data: recipesRaw },
     { data: ingredientsRaw },
+    { currentAp },
   ] = await Promise.all([
     supabase
       .from('inventory')
@@ -42,6 +44,7 @@ export default async function InventoryPage() {
     supabase
       .from('recipe_ingredients')
       .select('recipe_id, quantity, item:items(id, key, name)'),
+    applyApRegen(supabase, character),
   ])
 
   const recipes = (recipesRaw ?? []).map((r: any) => ({
@@ -105,6 +108,8 @@ export default async function InventoryPage() {
           baseDef={baseDef}
           baseSpd={baseSpd}
           gold={character.gold}
+          currentAp={currentAp}
+          maxAp={character.max_ap}
           recipes={recipes}
         />
       </div>
