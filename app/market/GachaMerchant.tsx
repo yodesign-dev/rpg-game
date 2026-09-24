@@ -15,7 +15,7 @@ const COST_10 = 3600
 type Tier = 'common' | 'rare' | 'epic' | 'legendary' | 'jackpot'
 
 const TIER: Record<Tier, { label: string; rate: string; card: string; text: string }> = {
-  common: { label: 'Thường', rate: '55%', card: 'border-[#4a4230] bg-[#17140f]', text: 'text-[#c9c4d4]' },
+  common: { label: 'Thường', rate: '55%', card: 'border-[#3a3348] bg-[#15121d]', text: 'text-[#c9c4d4]' },
   rare: { label: 'Hiếm', rate: '28%', card: 'border-[#4a6b7a] bg-[#101a1f]', text: 'text-[#8fc4e0]' },
   epic: { label: 'Sử Thi', rate: '12%', card: 'border-[#6b4a7a] bg-[#1a1220]', text: 'text-[#d0a8f0]' },
   legendary: {
@@ -103,11 +103,11 @@ export default function GachaMerchant({
   return (
     <div className={`${ui.className} space-y-5`}>
       {/* NPC */}
-      <div className="rounded-sm border border-[#6b4a7a]/60 bg-gradient-to-br from-[#241a2c] to-[#100e0c] p-4 flex gap-4 items-center">
+      <div className="rounded-lg border border-[#6b4a7a]/60 bg-gradient-to-br from-[#241a2c] to-[#0e0c13] p-4 flex gap-4 items-center">
         <div className="text-5xl shrink-0">🧙</div>
         <div className="min-w-0">
-          <p className="text-[#f1e6c8] text-sm font-semibold">Thương Nhân Bí Ẩn</p>
-          <p className="text-xs text-[#a89b7f] mt-1 leading-relaxed">
+          <p className="text-[#f2ede4] text-sm font-semibold">Thương Nhân Bí Ẩn</p>
+          <p className="text-xs text-[#a29fb3] mt-1 leading-relaxed">
             “Vàng đổi vận may, lữ khách. Mỗi rương một bất ngờ — có khi chỉ là vài nắm quặng, có khi là thứ các vị
             vua cũng thèm muốn.”
           </p>
@@ -116,11 +116,11 @@ export default function GachaMerchant({
 
       <div className="flex items-center justify-between text-xs">
         <span className="text-[#e0b050]">💰 {localGold.toLocaleString('vi-VN')} vàng</span>
-        <span className="text-[#a89b7f]">
+        <span className="text-[#a29fb3]">
           Bảo hiểm Huyền Thoại: <b className="text-[#f0c060]">{localPity}</b>/{PITY}
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-[#2c261c] overflow-hidden -mt-3">
+      <div className="h-1.5 rounded-full bg-[#2a2533] overflow-hidden -mt-3">
         <div className="h-full bg-[#e0b050]" style={{ width: `${Math.min(100, (localPity / PITY) * 100)}%` }} />
       </div>
 
@@ -128,7 +128,7 @@ export default function GachaMerchant({
         <button
           onClick={() => pull(1, false)}
           disabled={busy || localGold < COST_1}
-          className="rounded-sm border border-[#8a7f68] py-3 text-sm text-[#f1e6c8] hover:bg-[#2c261c] disabled:opacity-30"
+          className="rounded-lg border border-[#8a8499] py-3 text-sm text-[#f2ede4] hover:bg-[#2a2533] disabled:opacity-30"
         >
           Mở x1
           <span className="block text-xs text-[#e0b050]">{COST_1} vàng</span>
@@ -136,7 +136,7 @@ export default function GachaMerchant({
         <button
           onClick={() => pull(10, false)}
           disabled={busy || localGold < COST_10}
-          className="rounded-sm border border-[#e0b050] bg-[#e0b050]/15 py-3 text-sm text-[#f1e6c8] hover:bg-[#e0b050]/25 disabled:opacity-30"
+          className="rounded-lg border border-[#e0b050] bg-[#e0b050]/15 py-3 text-sm text-[#f2ede4] hover:bg-[#e0b050]/25 disabled:opacity-30"
         >
           Mở x10
           <span className="block text-xs text-[#e0b050]">
@@ -148,14 +148,14 @@ export default function GachaMerchant({
         <button
           onClick={() => pull(1, true)}
           disabled={busy}
-          className="w-full rounded-sm border border-[#8fc4a8] bg-[#3d5a45]/30 py-2.5 text-sm text-[#c8f0d8] disabled:opacity-40"
+          className="w-full rounded-lg border border-[#8fe0b0] bg-[#3d5a45]/30 py-2.5 text-sm text-[#c8f0d8] disabled:opacity-40"
         >
           🎁 Mở miễn phí hôm nay
         </button>
       )}
 
-      {error && <p className="text-xs text-[#c98787]">{error}</p>}
-      {busy && <p className="text-xs text-[#a89b7f] text-center">Thương nhân đang lục rương…</p>}
+      {error && <p className="text-xs text-[#e09595]">{error}</p>}
+      {busy && <p className="text-xs text-[#a29fb3] text-center">Thương nhân đang lục rương…</p>}
 
       {results.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -165,8 +165,8 @@ export default function GachaMerchant({
             return (
               <div
                 key={i}
-                className={`rounded-sm border p-2 text-center transition-all duration-300 ${
-                  shown ? `${t.card} opacity-100 scale-100` : 'border-[#2c261c] bg-[#0d0b09] opacity-60 scale-95'
+                className={`rounded-lg border p-2 text-center transition-all duration-300 ${
+                  shown ? `${t.card} opacity-100 scale-100` : 'border-[#2a2533] bg-[#0b0a10] opacity-60 scale-95'
                 }`}
               >
                 {shown ? (
@@ -179,7 +179,7 @@ export default function GachaMerchant({
                     </div>
                     <p className={`text-xs leading-tight ${t.text}`}>
                       {r.name}
-                      {r.qty > 1 && <span className="text-[#a89b7f]"> ×{r.qty}</span>}
+                      {r.qty > 1 && <span className="text-[#a29fb3]"> ×{r.qty}</span>}
                     </p>
                     {r.effect && LEGENDARY_EFFECTS[r.effect] && (
                       <p className="text-xs text-[#f0c060] mt-0.5">✦ {LEGENDARY_EFFECTS[r.effect].name}</p>
@@ -195,17 +195,17 @@ export default function GachaMerchant({
       )}
 
       {/* Tỉ lệ công khai */}
-      <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3">
-        <p className="text-xs tracking-widest text-[#8a7f68] mb-2">TỈ LỆ MỖI LƯỢT</p>
+      <div className="rounded-lg border border-[#2a2533] bg-[#0b0a10] p-3">
+        <p className="text-xs tracking-widest text-[#8a8499] mb-2">TỈ LỆ MỖI LƯỢT</p>
         <ul className="space-y-1 text-xs">
           {(Object.keys(TIER) as Tier[]).map((k) => (
             <li key={k} className="flex justify-between">
               <span className={TIER[k].text}>{TIER[k].label}</span>
-              <span className="text-[#a89b7f]">{TIER[k].rate}</span>
+              <span className="text-[#a29fb3]">{TIER[k].rate}</span>
             </li>
           ))}
         </ul>
-        <p className="text-xs text-[#6b6249] mt-2 leading-relaxed">
+        <p className="text-xs text-[#5c5470] mt-2 leading-relaxed">
           Thường: nguyên liệu hoặc bình máu · Hiếm: nguyên liệu hoặc trang bị Hiếm · Sử Thi: trang bị Sử Thi hoặc 2
           Bình Hồi AP Lớn · Huyền Thoại: trang bị Huyền Thoại có hiệu ứng · Jackpot: vũ khí boss Huyền Thoại. Tất cả theo
           level nhân vật. {PITY} lượt liền không ra Huyền Thoại → lượt thứ {PITY} chắc chắn ra.
@@ -214,7 +214,7 @@ export default function GachaMerchant({
 
       {history.length > 0 && (
         <div>
-          <p className="text-xs tracking-widest text-[#8a7f68] mb-2">LỊCH SỬ GẦN ĐÂY</p>
+          <p className="text-xs tracking-widest text-[#8a8499] mb-2">LỊCH SỬ GẦN ĐÂY</p>
           <ul className="space-y-1">
             {history.map((h) => (
               <li key={h.id} className="flex items-center gap-2 text-xs">
@@ -223,7 +223,7 @@ export default function GachaMerchant({
                   {h.item?.name ?? '?'}
                   {h.quantity > 1 && ` ×${h.quantity}`}
                 </span>
-                <span className="ml-auto text-[#6b6249]">{TIER[h.tier]?.label}</span>
+                <span className="ml-auto text-[#5c5470]">{TIER[h.tier]?.label}</span>
               </li>
             ))}
           </ul>

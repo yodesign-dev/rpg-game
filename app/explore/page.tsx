@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { display, ui } from '@/app/fonts'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
-import BottomNav from '../BottomNav'
+import GlassPage from '../GlassPage'
 import ExploreManager, { type Zone } from './ExploreManager'
 
 
@@ -61,46 +60,26 @@ export default async function ExplorePage() {
   })
 
   return (
-    <main
-      className="min-h-screen text-[#f2ede4] pb-28"
-      style={{
-        background:
-          'radial-gradient(480px 260px at 15% 0%, rgba(61,107,82,.25), transparent 60%),' +
-          'radial-gradient(480px 260px at 100% 10%, rgba(107,74,122,.2), transparent 55%),' +
-          '#07070a',
-      }}
+    <GlassPage
+      back
+      title="Thám Hiểm"
+      subtitle="Chọn vùng và số lượt. AP chỉ trừ một lần khi vào vùng — đánh tới khi đủ lượt hoặc hết HP."
     >
-      <div className="mx-auto max-w-2xl px-4 pt-6">
-        <div className="mb-6">
-          <Link href="/" className={`${ui.className} text-sm text-[#a29fb3] hover:text-white`}>
-            ← Về nhân vật
-          </Link>
-        </div>
+      {(zonesError || zones.length === 0) && (
+        <p className={`${ui.className} text-sm text-[#e09595] mb-4`}>
+          Không tải được danh sách vùng{zonesError ? `: ${zonesError.message}` : ''}.
+        </p>
+      )}
 
-        <header className="mb-6">
-          <h1 className={`${display.className} text-3xl text-white`}>Thám Hiểm</h1>
-          <p className={`${ui.className} text-sm text-[#a29fb3] mt-2`}>
-            Chọn vùng và số lượt. AP chỉ trừ một lần khi vào vùng — đánh tới khi đủ lượt hoặc hết HP.
-          </p>
-        </header>
-
-        {(zonesError || zones.length === 0) && (
-          <p className={`${ui.className} text-sm text-[#e09595] mb-4`}>
-            Không tải được danh sách vùng{zonesError ? `: ${zonesError.message}` : ''}.
-          </p>
-        )}
-
-        <ExploreManager
-          characterId={character.id}
-          level={character.level}
-          zones={zones}
-          currentHp={Math.min(stats.maxHp, regen.currentHp ?? stats.maxHp)}
-          maxHp={stats.maxHp}
-          currentAp={regen.currentAp}
-          maxAp={character.max_ap}
-        />
-      </div>
-      <BottomNav />
-    </main>
+      <ExploreManager
+        characterId={character.id}
+        level={character.level}
+        zones={zones}
+        currentHp={Math.min(stats.maxHp, regen.currentHp ?? stats.maxHp)}
+        maxHp={stats.maxHp}
+        currentAp={regen.currentAp}
+        maxAp={character.max_ap}
+      />
+    </GlassPage>
   )
 }

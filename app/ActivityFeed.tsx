@@ -1,6 +1,10 @@
+'use client'
+
+import { useState } from 'react'
 import { ui } from '@/app/fonts'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 
+const COLLAPSED = 3
 
 export type FeedEntry = {
   id: string
@@ -40,15 +44,18 @@ export default function ActivityFeed({
   myCharacterId: string
   now: number
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded ? entries : entries.slice(0, COLLAPSED)
+
   return (
-    <div className={`${ui.className} rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4`}>
-      <div className="text-sm tracking-[3px] text-[#a29fb3] mb-3">BẢNG TIN</div>
+    <div className={`${ui.className} rounded-[18px] bg-white/[0.045] border border-white/[0.09] p-4`}>
+      <div className="text-xs font-semibold tracking-[2px] text-[#a29fb3] mb-3">BẢNG TIN</div>
 
       {entries.length === 0 ? (
         <p className="text-xs text-[#7d7a8c]">Chưa có ai hạ boss hay nhặt đồ Huyền Thoại. Người đầu tiên sẽ là bạn?</p>
       ) : (
         <ul className="space-y-2.5">
-          {entries.map((e) => {
+          {shown.map((e) => {
             const mine = e.character_id === myCharacterId
             const name = (
               <>
@@ -99,6 +106,15 @@ export default function ActivityFeed({
             )
           })}
         </ul>
+      )}
+      {entries.length > COLLAPSED && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-3 text-xs text-[#a29fb3] hover:text-white"
+        >
+          {expanded ? 'Thu gọn' : `Xem thêm ${entries.length - COLLAPSED} tin`}
+        </button>
       )}
     </div>
   )

@@ -25,7 +25,7 @@ export default async function TitlesPage() {
   }))
 
   return (
-    <GlassPage title="Danh Hiệu" subtitle="Mở khóa bằng thành tích. Đeo 1 danh hiệu — hiện cạnh tên, trên bảng tin và bảng xếp hạng.">
+    <GlassPage back title="Danh Hiệu" subtitle="Mở khóa bằng thành tích. Đeo 1 danh hiệu — hiện cạnh tên, trên bảng tin và bảng xếp hạng.">
       <TitleList characterId={character.id} rows={rows} equipped={character.title_key} />
     </GlassPage>
   )

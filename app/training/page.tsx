@@ -5,7 +5,7 @@ import DummyTester from './DummyTester'
 export default async function TrainingPage() {
   const { character } = await getCurrentCharacter()
   return (
-    <GlassPage title="Nộm Tập" subtitle="Đánh 30 lượt vào nộm để đo sát thương. Không tốn AP, không mất HP — thử build thoải mái.">
+    <GlassPage back title="Nộm Tập" subtitle="Đánh 30 lượt vào nộm để đo sát thương. Không tốn AP, không mất HP — thử build thoải mái.">
       <DummyTester characterId={character.id} />
     </GlassPage>
   )

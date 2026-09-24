@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
-import BottomNav from '../BottomNav'
+import GlassPage from '../GlassPage'
 import SkillManager from './SkillManager'
 
 
@@ -41,30 +39,13 @@ export default async function SkillsPage() {
   const cls = character.classes as { name: string; icon: string | null }
 
   return (
-    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-8">
-          <Link href="/" className={`${ui.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
-            ← Về nhân vật
-          </Link>
-        </div>
-
-        <header className="text-center mb-10">
-          <div className="text-3xl mb-2">{cls.icon}</div>
-          <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>Kỹ Năng</h1>
-          <p className="text-sm text-[#a89b7f] mt-2">
-            {cls.name} · Cấp {character.level}
-          </p>
-        </header>
-
-        <SkillManager
-          characterId={character.id}
-          characterLevel={character.level}
-          skills={skills ?? []}
-          initialEquipped={equipped ?? []}
-        />
-      </div>
-      <BottomNav />
-    </main>
+    <GlassPage title="Kỹ Năng" subtitle={`${cls.icon ?? ''} ${cls.name} · Cấp ${character.level} · trang bị 2 chủ động + 1 bị động`}>
+      <SkillManager
+        characterId={character.id}
+        characterLevel={character.level}
+        skills={skills ?? []}
+        initialEquipped={equipped ?? []}
+      />
+    </GlassPage>
   )
 }

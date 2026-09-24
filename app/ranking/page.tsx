@@ -33,7 +33,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
   const rows = (data ?? []) as Row[]
 
   return (
-    <GlassPage title="Xếp Hạng" subtitle="Top 50 người chơi. Lực chiến tính từ ATK, DEF, HP, chí mạng, hút máu và hiệu ứng Huyền Thoại.">
+    <GlassPage back title="Xếp Hạng" subtitle="Top 50 người chơi. Lực chiến tính từ ATK, DEF, HP, chí mạng, hút máu và hiệu ứng Huyền Thoại.">
       <div role="tablist" className="grid grid-cols-4 gap-1.5 mb-4">
         {SORTS.map((s) => (
           <Link

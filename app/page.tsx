@@ -7,12 +7,11 @@ import { getCharacterStats } from '@/lib/character-stats'
 import ClassArt from './ClassArt'
 import SettingsMenu from './SettingsMenu'
 import BottomNav from './BottomNav'
-import DungeonCta from './DungeonCta'
-import ExploreCta from './ExploreCta'
 import StatAllocator from './StatAllocator'
 import ActivityFeed, { type FeedEntry } from './ActivityFeed'
 import QuestBoard, { type DailyQuests } from './quests/QuestBoard'
-
+import TalentTree, { type TalentEdge, type TalentNode, type TalentState } from './talents/TalentTree'
+import HubTabs, { hubHref, parseHubTab } from './hub/HubTabs'
 
 const CLASS_TAG: Record<string, string> = {
   warrior: 'text-[#e0a3a3] bg-[#8c3f3f]/[0.18] border-[#8c3f3f]/40',
@@ -21,7 +20,8 @@ const CLASS_TAG: Record<string, string> = {
   assassin: 'text-[#d9c3ee] bg-[#6b4a7a]/[0.18] border-[#6b4a7a]/40',
 }
 
-export default async function CharacterPage() {
+export default async function CharacterPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = parseHubTab((await searchParams).tab)
   const supabase = await createClient()
 
   const {
@@ -54,23 +54,38 @@ export default async function CharacterPage() {
   // Hồi phục trước rồi mới đọc chỉ số (apply_regen ghi HP/AP mới vào DB)
   const regen = await applyRegen(supabase, character)
   const { currentAp, nextApMinutes } = regen
-  const [stats, { data: feed }, { data: quests, error: questsError }] = await Promise.all([
-    getCharacterStats(supabase, character.id),
-    supabase
-      .from('activity_feed')
-      .select('id, character_id, character_name, character_title, kind, payload, created_at')
-      .order('created_at', { ascending: false })
-      .limit(15),
-    supabase.rpc('get_daily_quests', { p_character_id: character.id }),
-  ])
+  // Nhiệm vụ + thiên phú luôn tải (cần cho số đỏ trên tab); cây thiên phú chỉ tải khi mở tab đó
+  const [stats, { data: feed }, { data: quests, error: questsError }, { data: talentState }, { data: zones }, tree] =
+    await Promise.all([
+      getCharacterStats(supabase, character.id),
+      supabase
+        .from('activity_feed')
+        .select('id, character_id, character_name, character_title, kind, payload, created_at')
+        .order('created_at', { ascending: false })
+        .limit(15),
+      supabase.rpc('get_daily_quests', { p_character_id: character.id }),
+      supabase.rpc('get_talent_state', { p_character_id: character.id }),
+      supabase.from('zones').select('name, icon, min_level').order('min_level'),
+      tab === 'talents'
+        ? Promise.all([
+            supabase.from('talent_nodes').select('key, name, icon, branch, kind, cost, x, y, effects, description'),
+            supabase.from('talent_edges').select('a, b'),
+          ])
+        : null,
+    ])
 
   const maxHp = stats.maxHp
   const currentHp = Math.min(maxHp, regen.currentHp ?? maxHp)
-
-  const expPct = Math.min(100, Math.round((character.exp / character.exp_to_next) * 100))
-  const hpPct = Math.min(100, Math.round((currentHp / maxHp) * 100))
-  const apPct = Math.min(100, Math.round((currentAp / character.max_ap) * 100))
   const tag = CLASS_TAG[cls.key] ?? CLASS_TAG.warrior
+
+  const daily = quests as DailyQuests | null
+  const questsDone = daily?.quests.filter((q) => q.claimed).length ?? 0
+  const questsClaimable =
+    (daily?.quests.filter((q) => !q.claimed && q.progress >= q.target).length ?? 0) +
+    (daily && !daily.bonus_claimed && daily.quests.every((q) => q.claimed) ? 1 : 0)
+  const talentPoints = (talentState as TalentState | null)?.available ?? 0
+  // Vùng gợi ý: vùng cao nhất có cấp tối thiểu ≤ cấp nhân vật
+  const suggestedZone = [...(zones ?? [])].reverse().find((z) => z.min_level <= character.level)
 
   return (
     <main
@@ -82,157 +97,200 @@ export default async function CharacterPage() {
           '#07070a',
       }}
     >
-      <div className="mx-auto max-w-2xl px-4 pt-6">
-
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-6">
-          <SettingsMenu characterId={character.id} characterName={character.name} />
-          <p className={`${ui.className} text-sm tracking-[3px] text-[#a29fb3]`}>
-            🗼 TẦNG {character.tower_best}
-          </p>
-          <div
-            className={`${ui.className} flex items-center gap-2 bg-white/[0.06] border border-[#e0b050]/35
-              rounded-full pl-2.5 pr-3.5 py-2`}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0b050" strokeWidth="1.6">
-              <circle cx="12" cy="12" r="8.5" />
-              <path d="M9.5 10a2.5 2 0 0 1 2.5-1.5c1.5 0 2.5.6 2.5 1.7 0 2.3-5 1.3-5 3.6 0 1.1 1 1.7 2.5 1.7s2.5-.6 2.5-1.5" strokeLinecap="round" />
-              <path d="M12 8v8" strokeLinecap="round" />
-            </svg>
-            <span className="text-base font-semibold text-[#f1dba0]">{character.gold}</span>
-          </div>
-        </div>
-
-        {/* Character glass card */}
-        <div className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4">
-          <div className="flex items-center gap-4 mb-5">
-            <div className="relative w-20 h-20 shrink-0">
+      <div className="mx-auto max-w-2xl px-4">
+        {/* Header gọn, dính trên đầu khi cuộn */}
+        <header className="sticky top-0 z-20 -mx-4 px-4 pt-4 pb-3 bg-[#07070a]/85 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="relative w-14 h-14 shrink-0">
               <div
                 className="absolute inset-0 rounded-full p-[2px]"
                 style={{ background: 'linear-gradient(135deg,#b06fd8,#6b4a7a 60%,#3a2a48)' }}
               >
                 <div className="w-full h-full rounded-full bg-[#16121c] flex items-center justify-center">
-                  <ClassArt classKey={cls.key} seed={character.id} size={52} />
+                  <ClassArt classKey={cls.key} seed={character.id} size={36} />
                 </div>
               </div>
               <div
-                className={`${ui.className} absolute -right-1.5 -bottom-1.5 bg-[#1c1526] border-2 border-[#b06fd8]
-                  rounded-full px-2 py-0.5 text-xs font-bold text-[#e3caf5]`}
+                className="absolute -right-1 -bottom-1 bg-[#1c1526] border-2 border-[#b06fd8] rounded-full px-1.5 text-xs font-bold text-[#e3caf5]"
               >
-                Lv.{character.level}
+                {character.level}
               </div>
             </div>
             <div className="flex-grow min-w-0">
-              <div className={`${display.className} text-2xl font-semibold text-white tracking-[.3px] truncate`}>
-                {character.name}
+              <div className={`${display.className} text-xl font-semibold text-white truncate`}>{character.name}</div>
+              <div className="flex items-center gap-1.5 mt-0.5 min-w-0 text-xs">
+                <span className={`shrink-0 border rounded-full px-2 py-px ${tag}`}>{cls.name}</span>
+                <Link href="/titles" className="truncate text-[#f0c060] hover:underline">
+                  {character.title
+                    ? `${(character.title as { emoji: string }).emoji} ${(character.title as { name: string }).name}`
+                    : '🎖️ Chọn danh hiệu'}
+                </Link>
               </div>
-              <div className="flex items-center gap-1.5 mt-2">
-                <span className={`${ui.className} text-xs tracking-wide border rounded-full px-2.5 py-1 ${tag}`}>
-                  {cls.name.toUpperCase()}
-                </span>
-              </div>
-              <Link
-                href="/titles"
-                className={`${ui.className} inline-block mt-2 text-xs text-[#f0c060] hover:underline`}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className="flex items-center gap-1 rounded-full bg-white/[0.06] border border-[#e0b050]/35 px-2.5 py-1 text-sm font-semibold text-[#f1dba0] tabular-nums"
+                title="Vàng"
               >
-                {character.title
-                  ? `${(character.title as { emoji: string }).emoji} ${(character.title as { name: string }).name}`
-                  : '🎖️ Chọn danh hiệu'}
-              </Link>
+                <span aria-hidden>🪙</span>
+                {character.gold.toLocaleString('vi-VN')}
+              </span>
+              <SettingsMenu characterId={character.id} characterName={character.name} />
             </div>
           </div>
 
-          <div className="flex flex-col gap-3">
-            <StatBar
-              label="EXP"
-              value={`${character.exp} / ${character.exp_to_next}`}
-              pct={expPct}
-              gradient="linear-gradient(90deg,#a3925a,#e0c072)"
-              glow="rgba(224,192,114,.5)"
-              icon={
-                <path d="M12 3 14.5 9.5 21 10.5 16 15 17.5 21.5 12 18 6.5 21.5 8 15 3 10.5 9.5 9.5Z" strokeLinejoin="round" />
-              }
-              iconColor="#c9b982"
-            />
-            <StatBar
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <MiniBar
               label="HP"
-              value={`${currentHp} / ${maxHp}`}
-              pct={hpPct}
-              note={currentHp < maxHp ? `Hồi ${Math.max(1, Math.ceil(maxHp * 0.02))} HP mỗi phút` : undefined}
-              gradient="linear-gradient(90deg,#b06fd8,#e086b0)"
-              glow="rgba(224,134,176,.55)"
-              icon={<path d="M12 20 4 13a5 5 0 0 1 7-7l1 1 1-1a5 5 0 0 1 7 7Z" strokeLinejoin="round" strokeLinecap="round" />}
-              iconColor="#e0839c"
+              value={currentHp}
+              max={maxHp}
+              color="linear-gradient(90deg,#b06fd8,#e086b0)"
+              title={currentHp < maxHp ? `Hồi ${Math.max(1, Math.ceil(maxHp * 0.02))} HP mỗi phút` : 'Đầy'}
             />
-            <StatBar
+            <MiniBar
               label="AP"
-              value={`${currentAp} / ${character.max_ap}`}
-              pct={apPct}
-              gradient="linear-gradient(90deg,#3d9e6b,#8fe0b0)"
-              glow="rgba(143,224,176,.5)"
-              icon={<path d="M13 3 5 14h6l-1 7 8-11h-6Z" strokeLinejoin="round" strokeLinecap="round" />}
-              iconColor="#8fe0b0"
-              note={nextApMinutes !== null ? `Hồi tiếp trong ${nextApMinutes} phút` : 'Đã đầy'}
+              value={currentAp}
+              max={character.max_ap}
+              color="linear-gradient(90deg,#3d9e6b,#8fe0b0)"
+              title={nextApMinutes !== null ? `+1 AP sau ${nextApMinutes} phút` : 'Đầy'}
+            />
+            <MiniBar
+              label="EXP"
+              value={character.exp}
+              max={character.exp_to_next}
+              color="linear-gradient(90deg,#a3925a,#e0c072)"
+              title={`${Math.round((character.exp / character.exp_to_next) * 100)}% tới cấp ${character.level + 1}`}
             />
           </div>
-        </div>
+        </header>
 
-        <ExploreCta />
-        <DungeonCta />
-
-        {/* Nhiệm vụ hằng ngày — nằm ngay trong tab Nhân Vật */}
-        <section className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-3.5 sm:p-5 mb-4">
-          <div className="flex items-baseline justify-between gap-3 mb-3 px-1.5 sm:px-0">
-            <h2 className={`${display.className} text-xl text-white`}>📜 Nhiệm Vụ Hằng Ngày</h2>
-            <span className="text-xs text-[#7d7a8c]">làm mới 0h</span>
-          </div>
-          {questsError ? (
-            <p className="text-sm text-[#e09595]">Không tải được nhiệm vụ: {questsError.message}</p>
-          ) : (
-            <QuestBoard characterId={character.id} initial={quests as DailyQuests} />
-          )}
-        </section>
-
-        <div className={`${ui.className} grid grid-cols-5 gap-2 mb-4`}>
-          {[
-            { href: '/talents', icon: '🌟', label: 'Thiên phú' },
-            { href: '/classes', icon: '📖', label: 'Lớp' },
-            { href: '/ranking', icon: '🏆', label: 'Xếp hạng' },
-            { href: '/titles', icon: '🎖️', label: 'Danh hiệu' },
-            { href: '/training', icon: '🎯', label: 'Nộm tập' },
-          ].map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="rounded-[16px] bg-white/[0.045] border border-white/[0.09] py-3 px-1 text-center hover:bg-white/[0.08]"
-            >
-              <div className="text-xl">{l.icon}</div>
-              <div className="text-xs leading-tight text-[#c9c4d4] mt-1">{l.label}</div>
-            </Link>
-          ))}
-        </div>
-
-        <StatAllocator
-          characterId={character.id}
-          mainStat={cls.main_stat}
-          attributes={{
-            str: character.stat_str,
-            int: character.stat_int,
-            agi: character.stat_agi,
-            dex: character.stat_dex,
-            vit: character.stat_vit,
-          }}
-          statPoints={character.stat_points}
-          autoAllocate={character.auto_allocate_stats}
-          freeResetUsed={character.free_stat_reset_used}
-          resetCost={character.level * 50}
-          gold={character.gold}
-          totals={{ atk: stats.atk, def: stats.def, maxHp: stats.maxHp, crit: stats.critBonus }}
+        <HubTabs
+          active={tab}
+          badges={{ stats: character.stat_points, talents: talentPoints, quests: questsClaimable }}
         />
 
-        {/* eslint-disable-next-line react-hooks/purity -- server component: thời điểm render là "bây giờ" */}
-        <ActivityFeed entries={(feed ?? []) as FeedEntry[]} myCharacterId={character.id} now={Date.now()} />
+        {tab === 'overview' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <ActionCard
+                href="/explore"
+                title="Khám phá"
+                note={suggestedZone ? `Gợi ý: ${suggestedZone.icon} ${suggestedZone.name}` : 'Cày quái theo vùng'}
+                icon="🧭"
+                tone="border-[#8fe0b0]/30 from-[#3d6b52]/45 to-[#3d6b52]/10 hover:border-[#8fe0b0]/60"
+              />
+              <ActionCard
+                href="/dungeon"
+                title="Tháp Vực Sâu"
+                note={`Kỷ lục tầng ${character.tower_best}`}
+                icon="🗼"
+                tone="border-[#e09595]/30 from-[#8c3f3f]/40 to-[#8c3f3f]/10 hover:border-[#e09595]/60"
+              />
+            </div>
 
+            <SummaryRow
+              href={hubHref('quests')}
+              icon="📜"
+              title="Nhiệm vụ hằng ngày"
+              note={questsError ? 'Không tải được' : `Đã xong ${questsDone}/${daily?.quests.length ?? 3}`}
+              badge={questsClaimable > 0 ? `Nhận ${questsClaimable} quà` : undefined}
+            />
+
+            <Link
+              href={hubHref('stats')}
+              scroll={false}
+              className="block rounded-[18px] bg-white/[0.045] border border-white/[0.09] p-4 hover:bg-white/[0.07] transition-colors"
+            >
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <StatCell label="ATK" value={stats.atk} />
+                <StatCell label="DEF" value={stats.def} />
+                <StatCell label="HP" value={stats.maxHp} />
+                <StatCell label="CRIT" value={`${(Math.min(0.75, stats.critBonus) * 100).toFixed(1)}%`} />
+              </div>
+              {(character.stat_points > 0 || talentPoints > 0) && (
+                <p className="mt-3 text-sm text-[#e3caf5]">
+                  {character.stat_points > 0 && <>+{character.stat_points} điểm chỉ số </>}
+                  {character.stat_points > 0 && talentPoints > 0 && '· '}
+                  {talentPoints > 0 && <>+{talentPoints} điểm thiên phú </>}
+                  chưa dùng →
+                </p>
+              )}
+            </Link>
+
+            {/* eslint-disable-next-line react-hooks/purity -- server component: thời điểm render là "bây giờ" */}
+            <ActivityFeed entries={(feed ?? []) as FeedEntry[]} myCharacterId={character.id} now={Date.now()} />
+
+            <div className="grid grid-cols-4 gap-2 pt-1">
+              {[
+                { href: '/titles', icon: '🎖️', label: 'Danh hiệu' },
+                { href: '/ranking', icon: '🏆', label: 'Xếp hạng' },
+                { href: '/training', icon: '🎯', label: 'Nộm tập' },
+                { href: '/classes', icon: '📖', label: 'Lớp' },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="rounded-2xl border border-white/[0.07] py-2.5 text-center hover:bg-white/[0.06] transition-colors"
+                >
+                  <div className="text-lg">{l.icon}</div>
+                  <div className="text-xs leading-tight text-[#a29fb3] mt-0.5">{l.label}</div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tab === 'stats' && (
+          <StatAllocator
+            characterId={character.id}
+            mainStat={cls.main_stat}
+            attributes={{
+              str: character.stat_str,
+              int: character.stat_int,
+              agi: character.stat_agi,
+              dex: character.stat_dex,
+              vit: character.stat_vit,
+            }}
+            statPoints={character.stat_points}
+            autoAllocate={character.auto_allocate_stats}
+            freeResetUsed={character.free_stat_reset_used}
+            resetCost={character.level * 50}
+            gold={character.gold}
+            totals={{ atk: stats.atk, def: stats.def, maxHp: stats.maxHp, crit: stats.critBonus }}
+          />
+        )}
+
+        {tab === 'talents' && (
+          <>
+            <p className="text-sm text-[#a29fb3] mb-4">
+              Tối đa 7 điểm: 1 điểm mỗi 2 cấp + 1 điểm mỗi 10 tầng Tháp. Chỉ học được ô liền kề ô đã học.
+            </p>
+            {!talentState || tree?.[0].error ? (
+              <p className="text-sm text-[#e09595]">Không tải được cây thiên phú.</p>
+            ) : (
+              <TalentTree
+                characterId={character.id}
+                nodes={(tree?.[0].data ?? []) as TalentNode[]}
+                edges={(tree?.[1].data ?? []) as TalentEdge[]}
+                initialState={talentState as TalentState}
+                gold={character.gold}
+              />
+            )}
+          </>
+        )}
+
+        {tab === 'quests' && (
+          <>
+            <p className="text-sm text-[#a29fb3] mb-4">
+              3 nhiệm vụ mỗi ngày, làm mới lúc 0h. Làm đủ 3 để nhận quà thêm.
+            </p>
+            {questsError || !daily ? (
+              <p className="text-sm text-[#e09595]">Không tải được nhiệm vụ: {questsError?.message}</p>
+            ) : (
+              <QuestBoard characterId={character.id} initial={daily} />
+            )}
+          </>
+        )}
       </div>
 
       <BottomNav />
@@ -240,45 +298,91 @@ export default async function CharacterPage() {
   )
 }
 
-function StatBar({
+function MiniBar({
   label,
   value,
-  pct,
-  gradient,
-  glow,
-  icon,
-  iconColor,
-  note,
+  max,
+  color,
+  title,
 }: {
   label: string
-  value: string
-  pct: number
-  gradient: string
-  glow: string
-  icon: React.ReactNode
-  iconColor: string
-  note?: string
+  value: number
+  max: number
+  color: string
+  title: string
+}) {
+  const pct = Math.min(100, Math.round((value / Math.max(1, max)) * 100))
+  return (
+    <div title={title}>
+      <div className={`${ui.className} flex items-baseline justify-between text-xs mb-1`}>
+        <span className="font-semibold text-[#a29fb3]">{label}</span>
+        <span className="text-[#e5e1ed] tabular-nums">
+          {value}
+          <span className="text-[#7d7a8c]">/{max}</span>
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  )
+}
+
+function ActionCard({ href, title, note, icon, tone }: { href: string; title: string; note: string; icon: string; tone: string }) {
+  return (
+    <Link href={href} className={`rounded-[18px] border bg-gradient-to-br p-4 transition-colors ${tone}`}>
+      <div className="text-2xl" aria-hidden>
+        {icon}
+      </div>
+      <div className="mt-2 text-base font-bold text-white">{title}</div>
+      <div className="text-xs text-[#c9c4d4] mt-0.5 truncate">{note}</div>
+    </Link>
+  )
+}
+
+function SummaryRow({
+  href,
+  icon,
+  title,
+  note,
+  badge,
+}: {
+  href: string
+  icon: string
+  title: string
+  note: string
+  badge?: string
 }) {
   return (
-    <div>
-      <div className={`${ui.className} flex items-center justify-between text-xs tracking-wide text-[#a29fb3] mb-2`}>
-        <span className="flex items-center gap-1.5 font-medium">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.8">
-            {icon}
-          </svg>
-          {label}
+    <Link
+      href={href}
+      scroll={false}
+      className="flex items-center gap-3 rounded-[18px] bg-white/[0.045] border border-white/[0.09] px-4 py-3 hover:bg-white/[0.07] transition-colors"
+    >
+      <span className="text-xl" aria-hidden>
+        {icon}
+      </span>
+      <div className="flex-grow min-w-0">
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="text-xs text-[#a29fb3]">{note}</div>
+      </div>
+      {badge && (
+        <span className="shrink-0 rounded-full bg-[#8fe0b0]/15 border border-[#8fe0b0]/50 text-[#c8f5dc] text-xs font-semibold px-2.5 py-1">
+          {badge}
         </span>
-        <span className="text-sm text-[#e5e1ed] font-medium">{value}</span>
-      </div>
-      <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden">
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: gradient, boxShadow: `0 0 8px ${glow}` }}
-        />
-      </div>
-      {note && (
-        <p className={`${ui.className} text-xs text-[#7d7a8c] text-right mt-1.5`}>{note}</p>
       )}
+      <span className="text-[#7d7a8c]" aria-hidden>
+        ›
+      </span>
+    </Link>
+  )
+}
+
+function StatCell({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div>
+      <div className="text-xs text-[#7d7a8c]">{label}</div>
+      <div className="text-base font-semibold text-white tabular-nums">{value}</div>
     </div>
   )
 }

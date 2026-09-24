@@ -7,14 +7,14 @@ import { createClient } from '@/lib/supabase/client'
 
 
 const RARITY_COLOR: Record<string, string> = {
-  common: 'text-[#a89b7f]',
+  common: 'text-[#a29fb3]',
   rare: 'text-[#8fb4c4]',
   epic: 'text-[#b79bc4]',
   legendary: 'text-[#e0b050]',
 }
 
 const RARITY_BORDER: Record<string, string> = {
-  common: 'border-[#4a4230]',
+  common: 'border-[#3a3348]',
   rare: 'border-[#4a6b7a]',
   epic: 'border-[#6b4a7a]',
   legendary: 'border-[#8a6a1f]',
@@ -81,7 +81,7 @@ export default function MarketManager({
 
   if (items.length === 0) {
     return (
-      <p className={`${ui.className} text-center text-xs text-[#6b6249]`}>
+      <p className={`${ui.className} text-center text-xs text-[#5c5470]`}>
         Chợ hiện chưa có gì để bán.
       </p>
     )
@@ -89,15 +89,11 @@ export default function MarketManager({
 
   return (
     <div className="space-y-4">
-      <div className={`${ui.className} text-center text-xs text-[#6b6249] mb-2`}>
-        Vàng hiện có: {localGold}
-      </div>
-
       {error && (
-        <p className={`${ui.className} text-xs text-[#c98787] text-center`}>{error}</p>
+        <p className={`${ui.className} text-xs text-[#e09595] text-center`}>{error}</p>
       )}
       {notice && (
-        <p className={`${ui.className} text-xs text-[#8fc4a8] text-center`}>{notice}</p>
+        <p className={`${ui.className} text-xs text-[#8fe0b0] text-center`}>{notice}</p>
       )}
 
       <div className="space-y-3">
@@ -109,13 +105,13 @@ export default function MarketManager({
           return (
             <div
               key={item.id}
-              className="rounded-sm border border-[#2c261c] bg-[#17140f] p-4 flex items-center justify-between gap-4"
+              className="rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4 flex items-center justify-between gap-4"
             >
               <div className="flex items-center gap-3 min-w-0">
                 {item.icon && (
                   <div
-                    className={`w-11 h-11 rounded-sm border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
-                      bg-[#0d0b09] flex items-center justify-center shrink-0`}
+                    className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
+                      bg-[#0b0a10] flex items-center justify-center shrink-0`}
                   >
                     <img
                       src={`/items/${item.icon}`}
@@ -126,13 +122,13 @@ export default function MarketManager({
                   </div>
                 )}
                 <div>
-                  <p className={rarityClass}>{item.name}</p>
+                  <p className={`font-semibold ${rarityClass}`}>{item.name}</p>
                   {item.description && (
-                    <p className={`${ui.className} text-xs text-[#8a7f68] mt-1`}>
+                    <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
                       {item.description}
                     </p>
                   )}
-                  <p className={`${ui.className} text-xs text-[#6b6249] mt-1`}>
+                  <p className={`${ui.className} text-xs text-[#5c5470] mt-1`}>
                     {item.type === 'consumable' &&
                       (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
                     {item.type === 'weapon' &&
@@ -152,8 +148,8 @@ export default function MarketManager({
               <button
                 onClick={() => buy(item)}
                 disabled={!canAfford || isPending}
-                className={`${ui.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
-                  disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`}
+                className={`${ui.className} text-xs border border-[#8a8499] text-[#f2ede4] px-3 py-2 rounded-lg
+                  disabled:opacity-30 hover:bg-[#8a8499] hover:text-[#0e0c13] transition-colors whitespace-nowrap`}
               >
                 {isPending ? '…' : canAfford ? `Mua · ${item.buy_price} vàng` : 'Thiếu vàng'}
               </button>

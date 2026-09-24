@@ -54,6 +54,16 @@ type ExploreResult = {
 
 const TURN_PRESETS = [10, 25, 50, 100]
 
+// Mức nguy hiểm theo cấp tối thiểu của vùng so với cấp nhân vật (khớp cân bằng mới:
+// quái luôn gây ≥15% ATK, đánh vượt cấp bị giảm sát thương)
+function zoneDanger(level: number, z: Zone) {
+  if (level > z.maxLevel) return { label: 'Dễ', note: 'EXP giảm', cls: 'text-[#a29fb3] border-white/15 bg-white/[0.04]' }
+  if (level >= z.minLevel) return { label: 'Phù hợp', note: null, cls: 'text-[#8fe0b0] border-[#8fe0b0]/40 bg-[#8fe0b0]/10' }
+  if (z.minLevel - level <= 7)
+    return { label: 'Nguy hiểm', note: 'Quái mạnh hơn — EXP cao hơn', cls: 'text-[#f0b070] border-[#f0b070]/40 bg-[#f0b070]/10' }
+  return { label: 'Tử địa', note: 'Gần như chắc chết', cls: 'text-[#f08080] border-[#f08080]/40 bg-[#f08080]/10' }
+}
+
 export default function ExploreManager({
   characterId,
   level,
@@ -82,6 +92,10 @@ export default function ExploreManager({
   const [result, setResult] = useState<{ data: ExploreResult; zone: Zone } | null>(null)
   const [localHp, setLocalHp] = useState(currentHp)
   const [localAp, setLocalAp] = useState(currentAp)
+  // Mặc định chỉ hiện vùng quanh cấp hiện tại; vùng quá dễ / quá khó ẩn sau nút
+  const [showAll, setShowAll] = useState(false)
+  const nearby = zones.filter((z) => level <= z.maxLevel + 5 && z.minLevel - level <= 10)
+  const visibleZones = showAll || nearby.length === 0 ? zones : nearby
 
   const zone = zones.find((z) => z.id === selectedId) ?? null
   const exhausted = localHp <= 1
@@ -123,10 +137,9 @@ export default function ExploreManager({
 
       {/* Danh sách vùng */}
       <div className="flex flex-col gap-2 mb-5">
-        {zones.map((z) => {
+        {visibleZones.map((z) => {
           const selected = z.id === selectedId
-          const underLevel = level < z.minLevel
-          const overLevel = level > z.maxLevel
+          const danger = zoneDanger(level, z)
           return (
             <button
               key={z.id}
@@ -147,14 +160,12 @@ export default function ExploreManager({
                       Lv {z.minLevel}–{z.maxLevel}
                     </span>
                   </div>
-                  {underLevel && (
-                    <div className="text-xs text-[#f0b070] mt-0.5">
-                      ⚠️ Quái mạnh hơn bạn — dễ chết, nhưng EXP cao hơn
-                    </div>
-                  )}
-                  {overLevel && <div className="text-xs text-[#7d7a8c] mt-0.5">Quái yếu hơn bạn — EXP giảm</div>}
+                  {danger.note && <div className="text-xs text-[#7d7a8c] mt-0.5">{danger.note}</div>}
                 </div>
-                <span className="text-xs text-[#8fe0b0] shrink-0">{z.apCost} AP</span>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${danger.cls}`}>{danger.label}</span>
+                  <span className="text-xs text-[#a29fb3]">{z.apCost} AP</span>
+                </div>
               </div>
 
               {selected && (
@@ -184,6 +195,15 @@ export default function ExploreManager({
             </button>
           )
         })}
+        {visibleZones.length < zones.length || showAll ? (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="rounded-2xl border border-dashed border-white/15 py-2.5 text-sm text-[#a29fb3] hover:text-white"
+          >
+            {showAll ? 'Chỉ hiện vùng hợp cấp' : `Hiện tất cả ${zones.length} vùng`}
+          </button>
+        ) : null}
       </div>
 
       {/* Số lượt */}

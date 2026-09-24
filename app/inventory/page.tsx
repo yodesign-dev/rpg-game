@@ -1,11 +1,10 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { display, ui } from '@/app/fonts'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
-import BottomNav from '../BottomNav'
+import GlassPage from '../GlassPage'
 import InventoryManager, { type InventoryTab } from './InventoryManager'
 
 
@@ -84,43 +83,30 @@ export default async function InventoryPage({
   const currentHp = Math.min(stats.maxHp, regenHp ?? stats.maxHp)
 
   return (
-    <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-4">
-          <Link href="/" className={`${ui.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
-            ← Về nhân vật
-          </Link>
-        </div>
+    <GlassPage title="Túi Đồ">
+      {inventoryError && (
+        <p className={`${ui.className} text-xs text-[#e09595] text-center mb-6`}>
+          Không tải được túi đồ: {inventoryError.message}
+        </p>
+      )}
 
-        <header className="text-center mb-4">
-          <h1 className={`${display.className} text-3xl text-[#f1e6c8]`}>Túi Đồ</h1>
-        </header>
-
-        {inventoryError && (
-          <p className={`${ui.className} text-xs text-[#c98787] text-center mb-6`}>
-            Không tải được túi đồ: {inventoryError.message}
-          </p>
-        )}
-
-        <InventoryManager
-          characterId={character.id}
-          characterName={character.name}
-          classIcon={cls.icon}
-          items={(inventory as any) ?? []}
-          currentHp={currentHp}
-          baseMaxHp={baseMaxHp}
-          baseAtk={baseAtk}
-          baseDef={baseDef}
-          baseSpd={baseSpd}
-          gold={character.gold}
-          currentAp={currentAp}
-          maxAp={character.max_ap}
-          recipes={recipes}
-          initialTab={initialTab}
-          materialChain={(chainRaw ?? []) as MaterialInfo[]}
-        />
-      </div>
-      <BottomNav />
-    </main>
+      <InventoryManager
+        characterId={character.id}
+        characterName={character.name}
+        classIcon={cls.icon}
+        items={(inventory as any) ?? []}
+        currentHp={currentHp}
+        baseMaxHp={baseMaxHp}
+        baseAtk={baseAtk}
+        baseDef={baseDef}
+        baseSpd={baseSpd}
+        gold={character.gold}
+        currentAp={currentAp}
+        maxAp={character.max_ap}
+        recipes={recipes}
+        initialTab={initialTab}
+        materialChain={(chainRaw ?? []) as MaterialInfo[]}
+      />
+    </GlassPage>
   )
 }

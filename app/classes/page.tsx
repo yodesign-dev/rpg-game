@@ -13,7 +13,7 @@ export default async function ClassesPage() {
   const myClass = (character.classes as { key: string }).key
 
   return (
-    <GlassPage title="Lớp Nhân Vật" subtitle="Chỉ số gốc, main stat và kỹ năng của từng lớp.">
+    <GlassPage back title="Lớp Nhân Vật" subtitle="Chỉ số gốc, main stat và kỹ năng của từng lớp.">
       <p className="text-sm font-bold text-[#f0d060] mb-3">⚔️ Base Classes</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {((data ?? []) as ClassInfo[]).map((c) => (
