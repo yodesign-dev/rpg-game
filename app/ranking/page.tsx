@@ -75,7 +75,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
                   {r.out_name}
                   {me && ' (bạn)'}
                 </p>
-                <p className="text-[11px] text-[#7d7a8c] truncate">
+                <p className="text-xs text-[#7d7a8c] truncate">
                   {r.out_title ? `${r.out_title} · ` : ''}
                   {r.out_class_name} · Lv {r.out_level}
                 </p>

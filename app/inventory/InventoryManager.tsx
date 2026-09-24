@@ -1,12 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const RARITY_COLOR: Record<string, string> = {
   common: 'text-[#a89b7f]',
@@ -564,7 +563,7 @@ export default function InventoryManager({
         <div className="w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-sm border border-dashed border-[#2c261c]
           flex flex-col items-center justify-center gap-0.5 opacity-50 shrink-0">
           <span className="text-lg">{SLOT_ICON[slotKey]}</span>
-          <span className={`${mono.className} text-[8px] text-[#6b6249]`}>{label}</span>
+          <span className={`${ui.className} text-[10px] text-[#6b6249]`}>{label}</span>
         </div>
       )
     }
@@ -587,7 +586,7 @@ export default function InventoryManager({
           <span className="text-lg">{SLOT_ICON[slotKey]}</span>
         )}
         <span
-          className={`${mono.className} text-[8px] text-center leading-tight line-clamp-2
+          className={`${ui.className} text-[10px] text-center leading-tight line-clamp-2
             ${RARITY_COLOR[tierOf(row)] ?? RARITY_COLOR.common}`}
         >
           {item.name}
@@ -605,7 +604,7 @@ export default function InventoryManager({
   return (
     <div className="space-y-6">
       <div
-        className={`${mono.className} sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 bg-[#100e0c]/95 backdrop-blur border-b border-[#2c261c]`}
+        className={`${ui.className} sticky top-0 z-20 -mx-6 px-6 pt-2 pb-3 bg-[#100e0c]/95 backdrop-blur border-b border-[#2c261c]`}
       >
         <div className="flex items-center justify-center gap-4 text-xs text-[#a89b7f] mb-3">
           <span className="text-[#e0b050]">💰 {localGold}</span>
@@ -633,12 +632,12 @@ export default function InventoryManager({
       </div>
 
       {error && (
-        <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
+        <p className={`${ui.className} text-xs text-[#c98787] text-center`}>{error}</p>
       )}
 
       {tab === 'equip' && (
-        <div className={`${mono.className} flex items-center justify-between gap-3`}>
-          <span className="text-[11px] text-[#6b6249]">
+        <div className={`${ui.className} flex items-center justify-between gap-3`}>
+          <span className="text-xs text-[#6b6249]">
             {upgradeCount ? `Có ${upgradeCount} món trong túi mạnh hơn đồ đang mặc` : 'Đang mặc đồ tốt nhất trong túi'}
           </span>
           <button
@@ -650,7 +649,7 @@ export default function InventoryManager({
             </button>
         </div>
       )}
-      {tab === 'equip' && autoMsg && <p className={`${mono.className} text-xs text-[#8fc4a8]`}>{autoMsg}</p>}
+      {tab === 'equip' && autoMsg && <p className={`${ui.className} text-xs text-[#8fc4a8]`}>{autoMsg}</p>}
 
       {tab === 'equip' && (
       <section>
@@ -665,7 +664,7 @@ export default function InventoryManager({
 
             <div className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0">
               <div className="text-5xl sm:text-6xl">{classIcon}</div>
-              <p className={`${mono.className} text-xs text-[#f1e6c8] text-center truncate max-w-full`}>
+              <p className={`${ui.className} text-xs text-[#f1e6c8] text-center truncate max-w-full`}>
                 {characterName}
               </p>
               <div className="w-full max-w-[140px] h-1.5 bg-[#2c261c] rounded-full overflow-hidden">
@@ -674,10 +673,10 @@ export default function InventoryManager({
                   style={{ width: `${Math.min(100, Math.round((localHp / totalMaxHp) * 100))}%` }}
                 />
               </div>
-              <p className={`${mono.className} text-[10px] text-[#8a7f68]`}>
+              <p className={`${ui.className} text-xs text-[#8a7f68]`}>
                 HP {localHp} / {totalMaxHp}
               </p>
-              <p className={`${mono.className} text-[10px] text-[#6b8a5a]`}>
+              <p className={`${ui.className} text-xs text-[#6b8a5a]`}>
                 AP {localAp} / {maxAp}
               </p>
             </div>
@@ -689,7 +688,7 @@ export default function InventoryManager({
             </div>
           </div>
 
-          <div className={`${mono.className} mx-auto max-w-md mt-4 pt-3 border-t border-[#2c261c] flex items-center justify-around text-xs text-[#a89b7f]`}>
+          <div className={`${ui.className} mx-auto max-w-md mt-4 pt-3 border-t border-[#2c261c] flex items-center justify-around text-xs text-[#a89b7f]`}>
             <span>⚔️ {totalAtk}</span>
             <span>🛡️ {totalDef}</span>
             <span>💨 {baseSpd}</span>
@@ -699,19 +698,19 @@ export default function InventoryManager({
       )}
 
       {tab === 'equip' && listRows.length === 0 && (
-        <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+        <p className={`${ui.className} text-center text-xs text-[#6b6249]`}>
           Chưa mặc món nào. Vào tab Túi đồ để trang bị.
         </p>
       )}
 
       {tab === 'bag' && bagRows.length === 0 && (
-        <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+        <p className={`${ui.className} text-center text-xs text-[#6b6249]`}>
           Túi đồ trống. Đi thám hiểm hoặc đánh dungeon để nhặt đồ.
         </p>
       )}
 
       {tab === 'bag' && bagRows.length > 0 && (
-        <div className={`${mono.className} flex flex-wrap gap-1.5`}>
+        <div className={`${ui.className} flex flex-wrap gap-1.5`}>
           {['all', ...TYPE_ORDER].map((type) => {
             const n = type === 'all' ? bagRows.length : bagRows.filter((r) => r.items.type === type).length
             if (n === 0) return null
@@ -719,7 +718,7 @@ export default function InventoryManager({
               <button
                 key={type}
                 onClick={() => setTypeFilter(type)}
-                className={`rounded-full border px-3 py-1 text-[11px] ${
+                className={`rounded-full border px-3 py-1 text-xs ${
                   typeFilter === type
                     ? 'border-[#8a7f68] bg-[#2c261c] text-[#f1e6c8]'
                     : 'border-[#2c261c] text-[#8a7f68]'
@@ -733,7 +732,7 @@ export default function InventoryManager({
       )}
 
       {tab === 'bag' && bagRows.length > 0 && (
-        <div className={`${mono.className} space-y-3`}>
+        <div className={`${ui.className} space-y-3`}>
           <div className="flex items-center justify-between gap-3">
             {!sellMode ? (
               <button
@@ -744,7 +743,7 @@ export default function InventoryManager({
               {pendingRowId === 'auto' ? '…' : `⚡ Tự mặc đồ tốt nhất${upgradeCount ? ` (${upgradeCount})` : ''}`}
             </button>
             ) : (
-              <span className="text-[11px] text-[#6b6249]">Chọn nhiều món để bán một lần</span>
+              <span className="text-xs text-[#6b6249]">Chọn nhiều món để bán một lần</span>
             )}
             <button
               onClick={() => (sellMode ? exitSellMode() : (setSellMode(true), setSellResult(null)))}
@@ -763,7 +762,7 @@ export default function InventoryManager({
 
           {sellMode && (
             <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3 space-y-2">
-              <p className="text-[11px] text-[#8a7f68]">
+              <p className="text-xs text-[#8a7f68]">
                 Chọn nhanh (bấm lần nữa để bỏ chọn). Đồ đang mặc không bao giờ bị chọn.
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -800,7 +799,7 @@ export default function InventoryManager({
 
       {tab !== 'craft' && groups.map((group) => (
         <section key={group.type}>
-          <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
+          <h2 className={`${ui.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
             {TYPE_LABEL[group.type] ?? group.type.toUpperCase()}
           </h2>
 
@@ -813,7 +812,7 @@ export default function InventoryManager({
               const isArmItem = item.slot === 'weapon' || item.slot === 'shield'
               const isRingItem = item.slot === 'ring'
               const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
-              const btnBase = `${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
+              const btnBase = `${ui.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                 disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`
               const hasAffix = row.rolled_crit > 0 || row.rolled_lifesteal > 0
 
@@ -856,30 +855,30 @@ export default function InventoryManager({
                     <div className="min-w-0">
                       <p className={rarityClass}>
                         {(item.type === 'weapon' || item.type === 'armor') && (
-                          <span className={`${mono.className} block text-[10px] tracking-widest`}>
+                          <span className={`${ui.className} block text-xs tracking-widest`}>
                             {RARITY_LABEL[tier]?.toUpperCase()}
                           </span>
                         )}
                         {item.name}
                         {row.enchant_level > 0 && (
-                          <span className={`${mono.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
+                          <span className={`${ui.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
                         )}
                         {row.locked && <span className="text-xs"> 🔒</span>}
                         {isUpgrade(row) && (
-                          <span className={`${mono.className} ml-1.5 text-[10px] text-[#8fc4a8] border border-[#8fc4a8]/50 rounded-sm px-1`}>
+                          <span className={`${ui.className} ml-1.5 text-xs text-[#8fc4a8] border border-[#8fc4a8]/50 rounded-sm px-1`}>
                             ▲ Mạnh hơn
                           </span>
                         )}
                         {row.quantity > 1 && (
-                          <span className={`${mono.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
+                          <span className={`${ui.className} text-xs text-[#6b6249]`}> ×{row.quantity}</span>
                         )}
                       </p>
                       {item.description && (
-                        <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                        <p className={`${ui.className} text-xs text-[#8a7f68] mt-1`}>
                           {item.description}
                         </p>
                       )}
-                      <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
+                      <p className={`${ui.className} text-xs text-[#6b6249] mt-1`}>
                         {item.type === 'weapon' &&
                           `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
                         {item.type === 'armor' &&
@@ -895,14 +894,14 @@ export default function InventoryManager({
                         {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
                       </p>
                       {hasAffix && (
-                        <p className={`${mono.className} text-[11px] text-[#e0b050] mt-0.5`}>
+                        <p className={`${ui.className} text-xs text-[#e0b050] mt-0.5`}>
                           {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
                           {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
                           {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
                         </p>
                       )}
                       {row.legendary_effect && LEGENDARY_EFFECTS[row.legendary_effect] && (
-                        <p className={`${mono.className} text-[11px] text-[#f0c060] mt-0.5`}>
+                        <p className={`${ui.className} text-xs text-[#f0c060] mt-0.5`}>
                           ✦ {LEGENDARY_EFFECTS[row.legendary_effect].name}
                           <span className="text-[#a89b7f]"> — {LEGENDARY_EFFECTS[row.legendary_effect].description}</span>
                         </p>
@@ -911,7 +910,7 @@ export default function InventoryManager({
                   </div>
 
                   {sellMode ? (
-                    <span className={`${mono.className} text-xs shrink-0 ${row.equipped ? 'text-[#6b6249]' : 'text-[#e0b050]'}`}>
+                    <span className={`${ui.className} text-xs shrink-0 ${row.equipped ? 'text-[#6b6249]' : 'text-[#e0b050]'}`}>
                       {row.equipped ? 'Đang mặc' : row.locked ? 'Đã khóa' : `${sellPriceOf(row)} vàng`}
                     </span>
                   ) : (
@@ -921,7 +920,7 @@ export default function InventoryManager({
                       disabled={isPending}
                       title={row.locked ? 'Mở khóa' : 'Khóa — không bán được'}
                       aria-label={row.locked ? 'Mở khóa' : 'Khóa'}
-                      className={`${mono.className} text-xs border px-2 py-2 rounded-sm disabled:opacity-30 ${
+                      className={`${ui.className} text-xs border px-2 py-2 rounded-sm disabled:opacity-30 ${
                         row.locked
                           ? 'border-[#e0b050]/70 bg-[#e0b050]/15 text-[#e0b050]'
                           : 'border-[#2c261c] opacity-50 hover:opacity-100 hover:border-[#8a7f68]'
@@ -934,7 +933,7 @@ export default function InventoryManager({
                       <button
                         onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'enchant' ? null : { rowId: row.id, kind: 'enchant' }))}
                         disabled={row.enchant_level >= 5}
-                        className={`${mono.className} text-xs border border-[#e0b050]/50 text-[#e0b050] px-2.5 py-2 rounded-sm disabled:opacity-30 hover:bg-[#e0b050]/10 whitespace-nowrap`}
+                        className={`${ui.className} text-xs border border-[#e0b050]/50 text-[#e0b050] px-2.5 py-2 rounded-sm disabled:opacity-30 hover:bg-[#e0b050]/10 whitespace-nowrap`}
                       >
                         {row.enchant_level >= 5 ? '🔨 Max' : '🔨 Cường hóa'}
                       </button>
@@ -943,7 +942,7 @@ export default function InventoryManager({
                     {item.type === 'material' && item.material_tier != null && (
                       <button
                         onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'convert' ? null : { rowId: row.id, kind: 'convert' }))}
-                        className={`${mono.className} text-xs border border-[#8fb4c4]/50 text-[#8fb4c4] px-2.5 py-2 rounded-sm hover:bg-[#8fb4c4]/10 whitespace-nowrap`}
+                        className={`${ui.className} text-xs border border-[#8fb4c4]/50 text-[#8fb4c4] px-2.5 py-2 rounded-sm hover:bg-[#8fb4c4]/10 whitespace-nowrap`}
                       >
                         ⇅ Rã / Ghép
                       </button>
@@ -953,7 +952,7 @@ export default function InventoryManager({
                       <button
                         onClick={() => unequip(row)}
                         disabled={isPending}
-                        className={`${mono.className} text-xs border border-[#8c3f3f] text-[#c98787] px-3 py-2 rounded-sm
+                        className={`${ui.className} text-xs border border-[#8c3f3f] text-[#c98787] px-3 py-2 rounded-sm
                           disabled:opacity-30 hover:bg-[#8c3f3f] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
                       >
                         {isPending ? '…' : 'Gỡ'}
@@ -1001,7 +1000,7 @@ export default function InventoryManager({
                         <button
                           onClick={() => useItem(row)}
                           disabled={isPending || isFull}
-                          className={`${mono.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
+                          className={`${ui.className} text-xs border border-[#3d5a45] text-[#8fc4a8] px-3 py-2 rounded-sm
                             disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
                         >
                           {isPending ? '…' : isFull ? (isApPotion ? 'AP đầy' : 'HP đầy') : 'Dùng'}
@@ -1031,7 +1030,7 @@ export default function InventoryManager({
                     />
                   )}
                   {actionMsg?.rowId === row.id && (
-                    <p className={`${mono.className} basis-full text-xs ${actionMsg.ok ? 'text-[#8fc4a8]' : 'text-[#c98787]'}`}>
+                    <p className={`${ui.className} basis-full text-xs ${actionMsg.ok ? 'text-[#8fc4a8]' : 'text-[#c98787]'}`}>
                       {actionMsg.text}
                     </p>
                   )}
@@ -1043,7 +1042,7 @@ export default function InventoryManager({
       ))}
 
       {sellMode && selected.size > 0 && (
-        <div className={`${mono.className} sticky bottom-24 z-10 rounded-sm border border-[#e0b050]/60 bg-[#1a150c]/95 backdrop-blur p-3 flex items-center justify-between gap-3`}>
+        <div className={`${ui.className} sticky bottom-24 z-10 rounded-sm border border-[#e0b050]/60 bg-[#1a150c]/95 backdrop-blur p-3 flex items-center justify-between gap-3`}>
           <div className="text-xs min-w-0">
             <p className="text-[#f1e6c8]">
               Đã chọn {selected.size} món · <span className="text-[#e0b050]">+{selectedGold} vàng</span>
@@ -1068,7 +1067,7 @@ export default function InventoryManager({
 
         {craftResult && (
           <p
-            className={`${mono.className} text-xs text-center mb-3 ${
+            className={`${ui.className} text-xs text-center mb-3 ${
               craftResult.ok
                 ? (craftResult.rarity && RARITY_COLOR[craftResult.rarity]) || 'text-[#8fc4a8]'
                 : 'text-[#c98787]'
@@ -1080,7 +1079,7 @@ export default function InventoryManager({
         )}
 
         {recipes.length === 0 ? (
-          <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+          <p className={`${ui.className} text-center text-xs text-[#6b6249]`}>
             Chưa có công thức chế tạo nào.
           </p>
         ) : (
@@ -1120,12 +1119,12 @@ export default function InventoryManager({
                         <p className={RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}>
                           {recipe.name}
                         </p>
-                        <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                        <p className={`${ui.className} text-xs text-[#8a7f68] mt-1`}>
                           {Math.round(recipe.successRate * 100)}% thành công
                           {cost > 0 && ` · ${cost} vàng`}
                         </p>
                         {isEquipment && (
-                          <p className={`${mono.className} text-[11px] text-[#6b6249] mt-0.5`}>
+                          <p className={`${ui.className} text-xs text-[#6b6249] mt-0.5`}>
                             Tier ngẫu nhiên
                             {recipe.resultItem.rarity !== 'common' &&
                               ` (tối thiểu ${RARITY_LABEL[recipe.resultItem.rarity]})`}
@@ -1137,14 +1136,14 @@ export default function InventoryManager({
                     <button
                       onClick={() => craft(recipe)}
                       disabled={!canCraft || isPending}
-                      className={`${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
+                      className={`${ui.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                         disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`}
                     >
                       {isPending ? '…' : 'Chế tạo'}
                     </button>
                   </div>
                   {isEquipment && (
-                    <label className={`${mono.className} flex items-center gap-2 mt-2 text-[11px] text-[#a89b7f] cursor-pointer`}>
+                    <label className={`${ui.className} flex items-center gap-2 mt-2 text-xs text-[#a89b7f] cursor-pointer`}>
                       <input
                         type="checkbox"
                         checked={isBoosted}
@@ -1154,7 +1153,7 @@ export default function InventoryManager({
                       Tăng tỉ lệ tier cao ({boostCost(recipe.goldCost)} vàng thay vì {recipe.goldCost})
                     </label>
                   )}
-                  <div className={`${mono.className} text-[11px] mt-2 space-y-0.5`}>
+                  <div className={`${ui.className} text-xs mt-2 space-y-0.5`}>
                     {recipe.ingredients.map((ing) => {
                       const have = rows
                         .filter((r) => r.items.id === ing.item.id)
@@ -1191,7 +1190,7 @@ function QuickChip({
     <button
       type="button"
       onClick={onClick}
-      className={`${mono.className} text-[11px] border border-[#2c261c] bg-[#17140f] hover:border-[#8a7f68] rounded-full px-2.5 py-1 ${className}`}
+      className={`${ui.className} text-xs border border-[#2c261c] bg-[#17140f] hover:border-[#8a7f68] rounded-full px-2.5 py-1 ${className}`}
     >
       {children}
     </button>
@@ -1252,7 +1251,7 @@ function EnchantPanel({
     need.every((n) => countOf(n.m.id) >= need.filter((x) => x.m.id === n.m.id).reduce((a, x) => a + x.qty, 0))
 
   return (
-    <div className={`${mono.className} basis-full rounded-sm border border-[#e0b050]/30 bg-[#0d0b09] p-3 text-[11px] space-y-2`}>
+    <div className={`${ui.className} basis-full rounded-sm border border-[#e0b050]/30 bg-[#0d0b09] p-3 text-xs space-y-2`}>
       {!cost ? (
         <p className="text-[#6b6249]">Đang tính chi phí…</p>
       ) : (
@@ -1307,7 +1306,7 @@ function ConvertPanel({
   const breakFee = (row.items.sell_price ?? 0) * times
 
   return (
-    <div className={`${mono.className} basis-full rounded-sm border border-[#8fb4c4]/30 bg-[#0d0b09] p-3 text-[11px] space-y-2`}>
+    <div className={`${ui.className} basis-full rounded-sm border border-[#8fb4c4]/30 bg-[#0d0b09] p-3 text-xs space-y-2`}>
       <label className="flex items-center gap-2 text-[#a89b7f]">
         Số lần
         <input

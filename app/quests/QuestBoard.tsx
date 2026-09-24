@@ -87,7 +87,7 @@ export default function QuestBoard({ characterId, initial }: { characterId: stri
                     style={{ width: `${pct}%`, background: done ? '#8fe0b0' : 'linear-gradient(90deg,#b06fd8,#e086b0)' }}
                   />
                 </div>
-                <p className="text-[11px] text-[#7d7a8c] mt-1">
+                <p className="text-xs text-[#7d7a8c] mt-1">
                   {q.progress}/{q.target} · Thưởng {data.reward_gold} vàng + 2–4 {data.reward_material?.name ?? 'nguyên liệu'}
                 </p>
               </div>
@@ -115,7 +115,7 @@ export default function QuestBoard({ characterId, initial }: { characterId: stri
         <span className="text-2xl">🎁</span>
         <div className="flex-grow text-sm">
           <p className="text-white font-semibold">Quà hoàn thành cả 3</p>
-          <p className="text-[11px] text-[#c9b982]">
+          <p className="text-xs text-[#c9b982]">
             {data.bonus_gold} vàng + 1 {data.bonus_item?.name ?? 'Bình Hồi AP Lớn'}
           </p>
         </div>

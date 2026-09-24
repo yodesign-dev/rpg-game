@@ -1,7 +1,6 @@
 import Link from 'next/link'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 export default function DungeonCta() {
   return (
@@ -19,7 +18,7 @@ export default function DungeonCta() {
       </div>
       <div className="flex-grow">
         <div className="text-lg font-bold text-white">Tháp Vực Sâu</div>
-        <div className={`${mono.className} text-xs text-[#e0b8b8] mt-0.5`}>100 tầng · càng cao càng khó, thưởng càng lớn</div>
+        <div className={`${ui.className} text-xs text-[#e0b8b8] mt-0.5`}>100 tầng · càng cao càng khó, thưởng càng lớn</div>
       </div>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f0c0c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 6l6 6-6 6" />

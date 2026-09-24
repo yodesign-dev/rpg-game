@@ -2,10 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const RARITY_COLOR: Record<string, string> = {
   common: 'text-[#a89b7f]',
@@ -82,7 +81,7 @@ export default function MarketManager({
 
   if (items.length === 0) {
     return (
-      <p className={`${mono.className} text-center text-xs text-[#6b6249]`}>
+      <p className={`${ui.className} text-center text-xs text-[#6b6249]`}>
         Chợ hiện chưa có gì để bán.
       </p>
     )
@@ -90,15 +89,15 @@ export default function MarketManager({
 
   return (
     <div className="space-y-4">
-      <div className={`${mono.className} text-center text-xs text-[#6b6249] mb-2`}>
+      <div className={`${ui.className} text-center text-xs text-[#6b6249] mb-2`}>
         Vàng hiện có: {localGold}
       </div>
 
       {error && (
-        <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
+        <p className={`${ui.className} text-xs text-[#c98787] text-center`}>{error}</p>
       )}
       {notice && (
-        <p className={`${mono.className} text-xs text-[#8fc4a8] text-center`}>{notice}</p>
+        <p className={`${ui.className} text-xs text-[#8fc4a8] text-center`}>{notice}</p>
       )}
 
       <div className="space-y-3">
@@ -129,11 +128,11 @@ export default function MarketManager({
                 <div>
                   <p className={rarityClass}>{item.name}</p>
                   {item.description && (
-                    <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                    <p className={`${ui.className} text-xs text-[#8a7f68] mt-1`}>
                       {item.description}
                     </p>
                   )}
-                  <p className={`${mono.className} text-[11px] text-[#6b6249] mt-1`}>
+                  <p className={`${ui.className} text-xs text-[#6b6249] mt-1`}>
                     {item.type === 'consumable' &&
                       (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
                     {item.type === 'weapon' &&
@@ -153,7 +152,7 @@ export default function MarketManager({
               <button
                 onClick={() => buy(item)}
                 disabled={!canAfford || isPending}
-                className={`${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
+                className={`${ui.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                   disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`}
               >
                 {isPending ? '…' : canAfford ? `Mua · ${item.buy_price} vàng` : 'Thiếu vàng'}

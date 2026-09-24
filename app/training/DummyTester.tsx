@@ -51,7 +51,7 @@ export default function DummyTester({ characterId }: { characterId: string }) {
             }`}
           >
             <p className="text-sm text-white">{o.label}</p>
-            <p className="text-[11px] text-[#7d7a8c]">{o.note}</p>
+            <p className="text-xs text-[#7d7a8c]">{o.note}</p>
           </button>
         ))}
       </div>
@@ -85,7 +85,7 @@ export default function DummyTester({ characterId }: { characterId: string }) {
           )}
           <div className="max-h-64 overflow-y-auto space-y-0.5 border-l border-white/[0.1] pl-3">
             {result.log.map((e, i) => (
-              <p key={i} className="text-[11px] text-[#c9c4d4]">
+              <p key={i} className="text-xs text-[#c9c4d4]">
                 <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡' : '⚔️'} {e.opening && 'Khai Cuộc! '}
                 {e.skill} <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
                 {e.crit && ' (chí mạng!)'}
@@ -101,7 +101,7 @@ export default function DummyTester({ characterId }: { characterId: string }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white/[0.04] px-2 py-2 text-center">
-      <div className="text-[10px] tracking-wide text-[#7d7a8c]">{label}</div>
+      <div className="text-xs tracking-wide text-[#7d7a8c]">{label}</div>
       <div className="text-sm font-semibold text-white">{value}</div>
     </div>
   )

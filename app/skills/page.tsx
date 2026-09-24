@@ -1,12 +1,10 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import BottomNav from '../BottomNav'
 import SkillManager from './SkillManager'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 export default async function SkillsPage() {
   const supabase = await createClient()
@@ -46,7 +44,7 @@ export default async function SkillsPage() {
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8">
-          <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
+          <Link href="/" className={`${ui.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
             ← Về nhân vật
           </Link>
         </div>

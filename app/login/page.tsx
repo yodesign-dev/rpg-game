@@ -1,11 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
@@ -45,7 +43,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
-        <p className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3 text-center`}>
+        <p className={`${ui.className} text-xs tracking-widest text-[#8a7f68] mb-3 text-center`}>
           Cổng Vào
         </p>
         <h1 className={`${display.className} text-3xl text-[#f1e6c8] text-center mb-10`}>
@@ -54,7 +52,7 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className={`${mono.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
+            <label className={`${ui.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
               Email
             </label>
             <input
@@ -68,7 +66,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className={`${mono.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
+            <label className={`${ui.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
               Mật khẩu
             </label>
             <input
@@ -101,7 +99,7 @@ export default function LoginPage() {
             setError(null)
             setNotice(null)
           }}
-          className={`${mono.className} mt-6 w-full text-center text-xs text-[#8a7f68] hover:text-[#a89b7f]`}
+          className={`${ui.className} mt-6 w-full text-center text-xs text-[#8a7f68] hover:text-[#a89b7f]`}
         >
           {mode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
         </button>

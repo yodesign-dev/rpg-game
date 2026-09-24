@@ -52,7 +52,7 @@ export default function ClassCard({ c, highlight = false }: { c: ClassInfo; high
 
       <p className="mt-3 text-sm text-[#e5e1ed] leading-relaxed">{c.description}</p>
 
-      <p className="mt-2 text-[11px] text-[#8a93b0]">
+      <p className="mt-2 text-xs text-[#8a93b0]">
         HP {c.base_hp} (+{c.hp_per_level}/cấp) · ATK {c.base_atk} (+{c.atk_per_level}) · DEF {c.base_def} (+
         {c.def_per_level}) · SPD {c.base_spd}
       </p>

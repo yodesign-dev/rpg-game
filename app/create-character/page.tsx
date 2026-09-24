@@ -1,11 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 type ClassRow = {
   id: string
@@ -83,7 +81,7 @@ export default function CreateCharacterPage() {
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 py-16">
       <div className="mx-auto max-w-5xl">
         <header className="text-center mb-14">
-          <p className={`${mono.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
+          <p className={`${ui.className} text-xs tracking-widest text-[#8a7f68] mb-3`}>
             Chương I — Khởi Đầu
           </p>
           <h1 className={`${display.className} text-4xl md:text-5xl font-semibold text-[#f1e6c8]`}>
@@ -113,7 +111,7 @@ export default function CreateCharacterPage() {
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-3xl">{c.icon}</span>
                     {isSelected && (
-                      <span className={`${mono.className} text-[10px] tracking-wider ${accent.text}`}>
+                      <span className={`${ui.className} text-xs tracking-wider ${accent.text}`}>
                         ĐÃ CHỌN
                       </span>
                     )}
@@ -126,7 +124,7 @@ export default function CreateCharacterPage() {
                     {c.description}
                   </p>
 
-                  <dl className={`${mono.className} space-y-1.5 text-xs`}>
+                  <dl className={`${ui.className} space-y-1.5 text-xs`}>
                     <StatBar label="HP" value={c.base_hp} max={MAX_STAT * 6} barClass={accent.bar} />
                     <StatBar label="ATK" value={c.base_atk} max={MAX_STAT} barClass={accent.bar} />
                     <StatBar label="DEF" value={c.base_def} max={MAX_STAT} barClass={accent.bar} />
@@ -139,7 +137,7 @@ export default function CreateCharacterPage() {
         )}
 
         <div className="mt-14 max-w-md mx-auto">
-          <label className={`${mono.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
+          <label className={`${ui.className} block text-xs tracking-widest text-[#8a7f68] mb-2`}>
             Tên Nhân Vật
           </label>
           <input

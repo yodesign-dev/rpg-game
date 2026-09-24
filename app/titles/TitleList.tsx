@@ -69,13 +69,13 @@ export default function TitleList({
             <span className={`text-2xl shrink-0 ${t.owned ? '' : 'grayscale'}`}>{t.emoji}</span>
             <div className="flex-grow min-w-0">
               <p className="text-sm font-semibold text-white">{t.name}</p>
-              <p className="text-[11px] text-[#a29fb3]">{t.description}</p>
+              <p className="text-xs text-[#a29fb3]">{t.description}</p>
               {!t.owned && (
                 <div className="mt-1.5 flex items-center gap-2">
                   <div className="flex-grow h-1 rounded-full bg-white/[0.07] overflow-hidden">
                     <div className="h-full bg-[#b06fd8]" style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="text-[10px] text-[#7d7a8c] tabular-nums">
+                  <span className="text-xs text-[#7d7a8c] tabular-nums">
                     {t.progress}/{t.threshold}
                   </span>
                 </div>

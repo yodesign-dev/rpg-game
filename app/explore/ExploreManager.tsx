@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 
 export type Zone = {
@@ -115,7 +114,7 @@ export default function ExploreManager({
   }
 
   return (
-    <div className={mono.className}>
+    <div className={ui.className}>
       {/* HP / AP hiện tại */}
       <div className="grid grid-cols-2 gap-3 mb-5">
         <Meter label="HP" value={localHp} max={maxHp} color="linear-gradient(90deg,#b06fd8,#e086b0)" note="Hồi 2%/phút" />

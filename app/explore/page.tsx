@@ -1,14 +1,12 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import BottomNav from '../BottomNav'
 import ExploreManager, { type Zone } from './ExploreManager'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 export default async function ExplorePage() {
   const supabase = await createClient()
@@ -74,20 +72,20 @@ export default async function ExplorePage() {
     >
       <div className="mx-auto max-w-2xl px-4 pt-6">
         <div className="mb-6">
-          <Link href="/" className={`${mono.className} text-sm text-[#a29fb3] hover:text-white`}>
+          <Link href="/" className={`${ui.className} text-sm text-[#a29fb3] hover:text-white`}>
             ← Về nhân vật
           </Link>
         </div>
 
         <header className="mb-6">
           <h1 className={`${display.className} text-3xl text-white`}>Thám Hiểm</h1>
-          <p className={`${mono.className} text-sm text-[#a29fb3] mt-2`}>
+          <p className={`${ui.className} text-sm text-[#a29fb3] mt-2`}>
             Chọn vùng và số lượt. AP chỉ trừ một lần khi vào vùng — đánh tới khi đủ lượt hoặc hết HP.
           </p>
         </header>
 
         {(zonesError || zones.length === 0) && (
-          <p className={`${mono.className} text-sm text-[#e09595] mb-4`}>
+          <p className={`${ui.className} text-sm text-[#e09595] mb-4`}>
             Không tải được danh sách vùng{zonesError ? `: ${zonesError.message}` : ''}.
           </p>
         )}

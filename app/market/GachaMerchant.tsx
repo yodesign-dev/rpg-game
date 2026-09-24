@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 import { ItemIcon } from '../components/combat-ui'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const PITY = 50
 const COST_1 = 400
@@ -102,13 +101,13 @@ export default function GachaMerchant({
   }
 
   return (
-    <div className={`${mono.className} space-y-5`}>
+    <div className={`${ui.className} space-y-5`}>
       {/* NPC */}
       <div className="rounded-sm border border-[#6b4a7a]/60 bg-gradient-to-br from-[#241a2c] to-[#100e0c] p-4 flex gap-4 items-center">
         <div className="text-5xl shrink-0">🧙</div>
         <div className="min-w-0">
           <p className="text-[#f1e6c8] text-sm font-semibold">Thương Nhân Bí Ẩn</p>
-          <p className="text-[11px] text-[#a89b7f] mt-1 leading-relaxed">
+          <p className="text-xs text-[#a89b7f] mt-1 leading-relaxed">
             “Vàng đổi vận may, lữ khách. Mỗi rương một bất ngờ — có khi chỉ là vài nắm quặng, có khi là thứ các vị
             vua cũng thèm muốn.”
           </p>
@@ -132,7 +131,7 @@ export default function GachaMerchant({
           className="rounded-sm border border-[#8a7f68] py-3 text-sm text-[#f1e6c8] hover:bg-[#2c261c] disabled:opacity-30"
         >
           Mở x1
-          <span className="block text-[11px] text-[#e0b050]">{COST_1} vàng</span>
+          <span className="block text-xs text-[#e0b050]">{COST_1} vàng</span>
         </button>
         <button
           onClick={() => pull(10, false)}
@@ -140,7 +139,7 @@ export default function GachaMerchant({
           className="rounded-sm border border-[#e0b050] bg-[#e0b050]/15 py-3 text-sm text-[#f1e6c8] hover:bg-[#e0b050]/25 disabled:opacity-30"
         >
           Mở x10
-          <span className="block text-[11px] text-[#e0b050]">
+          <span className="block text-xs text-[#e0b050]">
             {COST_10.toLocaleString('vi-VN')} vàng · chắc chắn ≥ 1 Sử Thi
           </span>
         </button>
@@ -172,18 +171,18 @@ export default function GachaMerchant({
               >
                 {shown ? (
                   <>
-                    <p className={`text-[10px] tracking-widest ${t.text}`}>
+                    <p className={`text-xs tracking-widest ${t.text}`}>
                       {r.tier === 'jackpot' ? '💎 JACKPOT' : t.label.toUpperCase()}
                     </p>
                     <div className="flex justify-center my-1.5">
                       <ItemIcon icon={r.icon} size={36} />
                     </div>
-                    <p className={`text-[11px] leading-tight ${t.text}`}>
+                    <p className={`text-xs leading-tight ${t.text}`}>
                       {r.name}
                       {r.qty > 1 && <span className="text-[#a89b7f]"> ×{r.qty}</span>}
                     </p>
                     {r.effect && LEGENDARY_EFFECTS[r.effect] && (
-                      <p className="text-[10px] text-[#f0c060] mt-0.5">✦ {LEGENDARY_EFFECTS[r.effect].name}</p>
+                      <p className="text-xs text-[#f0c060] mt-0.5">✦ {LEGENDARY_EFFECTS[r.effect].name}</p>
                     )}
                   </>
                 ) : (
@@ -197,8 +196,8 @@ export default function GachaMerchant({
 
       {/* Tỉ lệ công khai */}
       <div className="rounded-sm border border-[#2c261c] bg-[#0d0b09] p-3">
-        <p className="text-[11px] tracking-widest text-[#8a7f68] mb-2">TỈ LỆ MỖI LƯỢT</p>
-        <ul className="space-y-1 text-[11px]">
+        <p className="text-xs tracking-widest text-[#8a7f68] mb-2">TỈ LỆ MỖI LƯỢT</p>
+        <ul className="space-y-1 text-xs">
           {(Object.keys(TIER) as Tier[]).map((k) => (
             <li key={k} className="flex justify-between">
               <span className={TIER[k].text}>{TIER[k].label}</span>
@@ -206,7 +205,7 @@ export default function GachaMerchant({
             </li>
           ))}
         </ul>
-        <p className="text-[10px] text-[#6b6249] mt-2 leading-relaxed">
+        <p className="text-xs text-[#6b6249] mt-2 leading-relaxed">
           Thường: nguyên liệu hoặc bình máu · Hiếm: nguyên liệu hoặc trang bị Hiếm · Sử Thi: trang bị Sử Thi hoặc 2
           Bình Hồi AP Lớn · Huyền Thoại: trang bị Huyền Thoại có hiệu ứng · Jackpot: vũ khí boss Huyền Thoại. Tất cả theo
           level nhân vật. {PITY} lượt liền không ra Huyền Thoại → lượt thứ {PITY} chắc chắn ra.
@@ -215,10 +214,10 @@ export default function GachaMerchant({
 
       {history.length > 0 && (
         <div>
-          <p className="text-[11px] tracking-widest text-[#8a7f68] mb-2">LỊCH SỬ GẦN ĐÂY</p>
+          <p className="text-xs tracking-widest text-[#8a7f68] mb-2">LỊCH SỬ GẦN ĐÂY</p>
           <ul className="space-y-1">
             {history.map((h) => (
-              <li key={h.id} className="flex items-center gap-2 text-[11px]">
+              <li key={h.id} className="flex items-center gap-2 text-xs">
                 <ItemIcon icon={h.item?.icon ?? null} size={16} />
                 <span className={TIER[h.tier]?.text ?? 'text-[#c9c4d4]'}>
                   {h.item?.name ?? '?'}

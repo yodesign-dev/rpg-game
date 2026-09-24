@@ -1,9 +1,7 @@
 import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import BottomNav from './BottomNav'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 // Khung chung cho các trang phụ theo phong cách glass của trang nhân vật
 export default function GlassPage({
@@ -25,7 +23,7 @@ export default function GlassPage({
           '#07070a',
       }}
     >
-      <div className={`${mono.className} mx-auto max-w-2xl px-4 pt-6`}>
+      <div className={`${ui.className} mx-auto max-w-2xl px-4 pt-6`}>
         <div className="mb-6">
           <Link href="/" className="text-sm text-[#a29fb3] hover:text-white">
             ← Về nhân vật

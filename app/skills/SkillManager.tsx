@@ -1,10 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const ACTIVE_MAX = 2
 const PASSIVE_MAX = 1
@@ -88,7 +87,7 @@ export default function SkillManager({
   return (
     <div className="space-y-8">
       {error && (
-        <p className={`${mono.className} text-xs text-[#c98787] text-center`}>{error}</p>
+        <p className={`${ui.className} text-xs text-[#c98787] text-center`}>{error}</p>
       )}
 
       <SkillGroup
@@ -142,8 +141,8 @@ function SkillGroup({
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
-        <h2 className={`${mono.className} text-xs tracking-widest text-[#8a7f68]`}>{title}</h2>
-        <span className={`${mono.className} text-[10px] text-[#6b6249]`}>{note}</span>
+        <h2 className={`${ui.className} text-xs tracking-widest text-[#8a7f68]`}>{title}</h2>
+        <span className={`${ui.className} text-xs text-[#6b6249]`}>{note}</span>
       </div>
 
       <div className="space-y-3">
@@ -164,21 +163,21 @@ function SkillGroup({
                 <span className="text-xl leading-none mt-0.5">{skill.icon}</span>
                 <div>
                   <p className="text-[#f1e6c8]">{skill.name}</p>
-                  <p className={`${mono.className} text-[11px] text-[#8a7f68] mt-1`}>
+                  <p className={`${ui.className} text-xs text-[#8a7f68] mt-1`}>
                     {skill.description}
                   </p>
                 </div>
               </div>
 
               {isLocked ? (
-                <span className={`${mono.className} text-[10px] text-[#6b6249] whitespace-nowrap`}>
+                <span className={`${ui.className} text-xs text-[#6b6249] whitespace-nowrap`}>
                   🔒 Cấp {skill.unlock_level}
                 </span>
               ) : row ? (
                 <button
                   onClick={() => onUnequip(skill, row)}
                   disabled={isPending}
-                  className={`${mono.className} text-xs border border-[#8c3f3f] text-[#c98787] px-3 py-2 rounded-sm
+                  className={`${ui.className} text-xs border border-[#8c3f3f] text-[#c98787] px-3 py-2 rounded-sm
                     disabled:opacity-30 hover:bg-[#8c3f3f] hover:text-[#f1e6c8] transition-colors whitespace-nowrap`}
                 >
                   {isPending ? '…' : 'Gỡ'}
@@ -187,7 +186,7 @@ function SkillGroup({
                 <button
                   onClick={() => onEquip(skill)}
                   disabled={isPending || slotFull}
-                  className={`${mono.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
+                  className={`${ui.className} text-xs border border-[#8a7f68] text-[#f1e6c8] px-3 py-2 rounded-sm
                     disabled:opacity-30 hover:bg-[#8a7f68] hover:text-[#100e0c] transition-colors whitespace-nowrap`}
                 >
                   {isPending ? '…' : slotFull ? 'Đầy' : 'Trang bị'}

@@ -41,7 +41,7 @@ export function Meter({ label, value, max, color, note }: { label: string; value
       <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
       </div>
-      {value < max && <p className="text-[11px] text-[#7d7a8c] text-right mt-1.5">{note}</p>}
+      {value < max && <p className="text-xs text-[#7d7a8c] text-right mt-1.5">{note}</p>}
     </div>
   )
 }
@@ -50,7 +50,7 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
   return (
     <div className="mt-2 max-h-64 overflow-y-auto space-y-1 border-l border-white/[0.1] pl-3">
       {fight.log.map((e, i) => (
-        <p key={i} className="text-[11px] leading-relaxed">
+        <p key={i} className="text-xs leading-relaxed">
           {e.actor === 'character' ? (
             <span className="text-[#c9c4d4]">
               <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : '⚔️'}{' '}

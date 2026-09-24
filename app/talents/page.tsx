@@ -14,7 +14,7 @@ export default async function TalentsPage() {
   return (
     <GlassPage
       title="Thiên Phú"
-      subtitle="1 điểm mỗi 2 cấp + 1 điểm mỗi tầng boss Tháp đã qua. Chỉ học được ô liền kề ô đã học."
+      subtitle="Tối đa 7 điểm: 1 điểm mỗi 2 cấp + 1 điểm mỗi 10 tầng Tháp. Chỉ học được ô liền kề ô đã học — hãy chọn nhánh cho kỹ."
     >
       {error ? (
         <p className="text-sm text-[#e09595]">Không tải được cây thiên phú: {error.message}</p>

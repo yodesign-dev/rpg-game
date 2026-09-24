@@ -58,6 +58,7 @@ export default function TalentTree({
   const router = useRouter()
   const [state, setState] = useState(initialState)
   const [selected, setSelected] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -77,6 +78,16 @@ export default function TalentTree({
   const learnable = (n: TalentNode) => reachable(n.key) && state.available >= n.cost
 
   const sel = selected ? byKey[selected] : null
+  const hov = hovered ? byKey[hovered] : null
+
+  const status = (n: TalentNode) =>
+    learned.has(n.key)
+      ? { text: '✓ Đã học', cls: 'text-[#f0c060]' }
+      : learnable(n)
+        ? { text: 'Bấm để học', cls: 'text-[#8fe0b0]' }
+        : !reachable(n.key)
+          ? { text: '🔒 Cần học ô liền kề trước', cls: 'text-[#8a8499]' }
+          : { text: `Thiếu điểm (cần ${n.cost})`, cls: 'text-[#e09595]' }
 
   async function learn(key: string) {
     setBusy(true)
@@ -125,65 +136,81 @@ export default function TalentTree({
       </div>
 
       <div className="rounded-2xl border border-white/[0.09] bg-[radial-gradient(circle_at_center,rgba(107,74,122,.18),transparent_70%)] p-2">
-        <svg viewBox="-100 -100 200 200" className="w-full h-auto select-none" role="img" aria-label="Cây thiên phú">
-          {edges.map((e) => {
-            const a = byKey[e.a]
-            const b = byKey[e.b]
-            if (!a || !b) return null
-            const on = learned.has(e.a) && learned.has(e.b)
-            return (
-              <line
-                key={`${e.a}-${e.b}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke={on ? '#f0c060' : '#4a3f5c'}
-                strokeWidth={on ? 0.9 : 0.6}
-                strokeOpacity={on ? 0.9 : 0.7}
-              />
-            )
-          })}
-          {nodes.map((n) => {
-            const isLearned = learned.has(n.key)
-            const canLearn = learnable(n)
-            const r = RADIUS[n.kind]
-            return (
-              <g key={n.key} onClick={() => setSelected(n.key)} className="cursor-pointer">
-                {n.kind === 'keystone' && (
-                  <circle cx={n.x} cy={n.y} r={r + 1.4} fill="none" stroke="#c0703a" strokeWidth={0.7} />
-                )}
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={r}
-                  fill={isLearned ? '#f0d890' : '#1e1a2a'}
-                  stroke={
-                    selected === n.key ? '#ffffff' : isLearned ? '#f0c060' : canLearn ? '#8fe0b0' : '#3a3348'
-                  }
-                  strokeWidth={selected === n.key ? 1 : canLearn ? 0.9 : 0.6}
-                  opacity={isLearned || canLearn || n.kind === 'start' ? 1 : 0.7}
+        <div className="relative">
+          <svg
+            viewBox="-100 -100 200 200"
+            className="w-full h-auto select-none"
+            role="img"
+            aria-label="Cây thiên phú"
+            onClick={(e) => e.target === e.currentTarget && setHovered(null)}
+          >
+            {edges.map((e) => {
+              const a = byKey[e.a]
+              const b = byKey[e.b]
+              if (!a || !b) return null
+              const on = learned.has(e.a) && learned.has(e.b)
+              return (
+                <line
+                  key={`${e.a}-${e.b}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={on ? '#f0c060' : '#4a3f5c'}
+                  strokeWidth={on ? 0.9 : 0.6}
+                  strokeOpacity={on ? 0.9 : 0.7}
                 />
-                <text x={n.x} y={n.y + r * 0.38} textAnchor="middle" fontSize={r * 1.05}>
-                  {n.icon}
-                </text>
-                {(n.kind === 'notable' || n.kind === 'keystone') && (
-                  <text
-                    x={n.x}
-                    y={n.y + r + 4}
-                    textAnchor="middle"
-                    fontSize={n.kind === 'keystone' ? 3.4 : 2.9}
-                    fill={isLearned ? '#f0c060' : '#c9c4d4'}
-                    fontWeight={n.kind === 'keystone' ? 700 : 400}
-                  >
-                    {n.name}
+              )
+            })}
+            {nodes.map((n) => {
+              const isLearned = learned.has(n.key)
+              const canLearn = learnable(n)
+              const r = RADIUS[n.kind]
+              return (
+                <g
+                  key={n.key}
+                  onClick={() => {
+                    setSelected(n.key)
+                    setHovered(n.key) // màn cảm ứng không có hover → chạm cũng hiện gợi ý
+                  }}
+                  onMouseEnter={() => setHovered(n.key)}
+                  onMouseLeave={() => setHovered((h) => (h === n.key ? null : h))}
+                  className="cursor-pointer"
+                >
+                  {n.kind === 'keystone' && (
+                    <circle cx={n.x} cy={n.y} r={r + 1.4} fill="none" stroke="#c0703a" strokeWidth={0.7} />
+                  )}
+                  <circle
+                    cx={n.x}
+                    cy={n.y}
+                    r={r}
+                    fill={isLearned ? '#f0d890' : '#1e1a2a'}
+                    stroke={selected === n.key ? '#ffffff' : isLearned ? '#f0c060' : canLearn ? '#8fe0b0' : '#3a3348'}
+                    strokeWidth={selected === n.key ? 1 : canLearn ? 0.9 : 0.6}
+                    opacity={isLearned || canLearn || n.kind === 'start' ? 1 : 0.7}
+                  />
+                  <text x={n.x} y={n.y + r * 0.38} textAnchor="middle" fontSize={r * 1.05}>
+                    {n.icon}
                   </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
-        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#a29fb3] px-2 pb-1">
+                  {(n.kind === 'notable' || n.kind === 'keystone') && (
+                    <text
+                      x={n.x}
+                      y={n.y + r + 4.4}
+                      textAnchor="middle"
+                      fontSize={n.kind === 'keystone' ? 4 : 3.4}
+                      fill={isLearned ? '#f0c060' : '#c9c4d4'}
+                      fontWeight={n.kind === 'keystone' ? 700 : 400}
+                    >
+                      {n.name}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </svg>
+          {hov && <NodeTooltip node={hov} status={status(hov)} />}
+        </div>
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#a29fb3] px-2 pb-1">
           <span>
             <span className="text-[#f0c060]">●</span> đã học
           </span>
@@ -193,7 +220,7 @@ export default function TalentTree({
           <span>
             <span className="text-[#5c5470]">●</span> khoá
           </span>
-          <span>· bấm vào ô để xem chi tiết</span>
+          <span>· rê chuột hoặc chạm vào ô để xem gợi ý</span>
         </p>
       </div>
 
@@ -204,7 +231,7 @@ export default function TalentTree({
             <div className="flex-grow min-w-0">
               <p className={`text-sm font-semibold ${sel.kind === 'keystone' ? 'text-[#f0a060]' : 'text-white'}`}>
                 {sel.name}
-                <span className="ml-2 text-[11px] font-normal text-[#7d7a8c]">
+                <span className="ml-2 text-xs font-normal text-[#7d7a8c]">
                   {sel.kind === 'keystone' ? 'Ô trùm' : sel.kind === 'notable' ? 'Ô lớn' : 'Ô nhỏ'} · {sel.cost} điểm
                 </span>
               </p>
@@ -228,7 +255,7 @@ export default function TalentTree({
       {error && <p className="text-sm text-[#e09595]">{error}</p>}
 
       <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4">
-        <p className="text-[11px] tracking-widest text-[#7d7a8c] mb-2">TỔNG HIỆU ỨNG</p>
+        <p className="text-xs tracking-widest text-[#7d7a8c] mb-2">TỔNG HIỆU ỨNG</p>
         {totals.length === 0 ? (
           <p className="text-xs text-[#7d7a8c]">Chưa học ô nào.</p>
         ) : (
@@ -248,6 +275,43 @@ export default function TalentTree({
           </ul>
         )}
       </div>
+    </div>
+  )
+}
+
+const KIND_LABEL: Record<TalentNode['kind'], string> = {
+  start: 'Tâm',
+  small: 'Ô nhỏ',
+  notable: 'Ô lớn',
+  keystone: 'Ô trùm',
+}
+
+// Tooltip nổi cạnh ô — toạ độ SVG (-100..100) quy ra % của khung vuông
+function NodeTooltip({ node, status }: { node: TalentNode; status: { text: string; cls: string } }) {
+  const left = (node.x + 100) / 2
+  const top = (node.y + 100) / 2
+  const below = node.y < -40 // ô sát mép trên thì hiện bên dưới
+  const gap = `${(RADIUS[node.kind] + 2) / 2}%`
+  return (
+    <div
+      role="tooltip"
+      className="pointer-events-none absolute z-10 w-60 max-w-[80%] rounded-xl border border-white/15 bg-[#15121d]/95 px-3.5 py-2.5 shadow-xl shadow-black/60 backdrop-blur"
+      style={{
+        left: `${left}%`,
+        top: below ? `calc(${top}% + ${gap})` : `calc(${top}% - ${gap})`,
+        // dịch ngang theo đúng tỉ lệ vị trí ô → mép tooltip không bao giờ lọt ra ngoài khung
+        transform: `translate(-${left}%, ${below ? '0' : '-100%'})`,
+      }}
+    >
+      <p className={`text-sm font-semibold ${node.kind === 'keystone' ? 'text-[#f0a060]' : 'text-white'}`}>
+        {node.icon} {node.name}
+      </p>
+      <p className="text-xs text-[#7d7a8c] mt-0.5">
+        {KIND_LABEL[node.kind]}
+        {node.kind !== 'start' && ` · ${node.cost} điểm`}
+      </p>
+      <p className="text-sm text-[#e5e1ed] mt-1.5 leading-snug">{node.description}</p>
+      {node.kind !== 'start' && <p className={`text-xs mt-1.5 ${status.cls}`}>{status.text}</p>}
     </div>
   )
 }

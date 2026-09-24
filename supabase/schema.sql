@@ -3913,37 +3913,37 @@ insert into talent_nodes (key, name, icon, branch, kind, cost, x, y, effects, de
   ('hp_n', 'Sinh Lực Dồi Dào', '❤️', 'hp', 'notable', 2, 0.0, -51.0, '{"hp_pct": 0.08, "def_pct": 0.03}'::jsonb, '+8% HP, +3% DEF'),
   ('hp_side', 'Da Thịt Rắn Chắc', '❤️', 'hp', 'small', 1, 19.8, -54.3, '{"hp_pct": 0.05}'::jsonb, '+5% HP'),
   ('hp_3', 'Sinh Lực III', '❤️', 'hp', 'small', 1, -7.1, -67.6, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
-  ('hp_k', 'Thành Trì Sống', '❤️', 'hp', 'keystone', 3, 0.0, -86.7, '{"hp_pct": 0.25, "atk_pct": -0.1}'::jsonb, '+25% HP tối đa, −10% ATK'),
+  ('hp_k', 'Thành Trì Sống', '❤️', 'hp', 'keystone', 2, 0.0, -86.7, '{"hp_pct": 0.25, "atk_pct": -0.1}'::jsonb, '+25% HP tối đa, −10% ATK'),
   ('atk_1', 'Sức Mạnh', '⚔️', 'atk', 'small', 1, 14.7, -8.5, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
   ('atk_2', 'Sức Mạnh II', '⚔️', 'atk', 'small', 1, 29.4, -17.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
   ('atk_n', 'Khát Chiến', '⚔️', 'atk', 'notable', 2, 44.2, -25.5, '{"atk_pct": 0.06, "crit": 0.02}'::jsonb, '+6% ATK, +2% chí mạng'),
   ('atk_side', 'Đồ Tể', '⚔️', 'atk', 'small', 1, 56.9, -10.0, '{"atk_pct": 0.04}'::jsonb, '+4% ATK'),
   ('atk_3', 'Sức Mạnh III', '⚔️', 'atk', 'small', 1, 55.0, -40.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
-  ('atk_k', 'Cuồng Nộ Vô Độ', '⚔️', 'atk', 'keystone', 3, 75.1, -43.4, '{"atk_pct": 0.3, "def_pct": -0.2}'::jsonb, '+30% ATK, −20% DEF'),
+  ('atk_k', 'Cuồng Nộ Vô Độ', '⚔️', 'atk', 'keystone', 2, 75.1, -43.4, '{"atk_pct": 0.3, "def_pct": -0.2}'::jsonb, '+30% ATK, −20% DEF'),
   ('crit_1', 'Nhãn Lực', '🎯', 'crit', 'small', 1, 14.7, 8.5, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
   ('crit_2', 'Nhãn Lực II', '🎯', 'crit', 'small', 1, 29.4, 17.0, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
   ('crit_n', 'Điểm Yếu', '🎯', 'crit', 'notable', 2, 44.2, 25.5, '{"crit": 0.03, "atk_pct": 0.02}'::jsonb, '+3% chí mạng, +2% ATK'),
   ('crit_side', 'Tâm Nhãn', '🎯', 'crit', 'small', 1, 37.2, 44.3, '{"crit": 0.02}'::jsonb, '+2% chí mạng'),
   ('crit_3', 'Nhãn Lực III', '🎯', 'crit', 'small', 1, 62.1, 27.7, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
-  ('crit_k', 'Mắt Tử Thần', '🎯', 'crit', 'keystone', 3, 75.1, 43.3, '{"crit_mult": 2.2, "hp_pct": -0.1}'::jsonb, 'Chí mạng gây ×2.2 (thay ×1.5), −10% HP'),
+  ('crit_k', 'Mắt Tử Thần', '🎯', 'crit', 'keystone', 2, 75.1, 43.3, '{"crit_mult": 2.2, "hp_pct": -0.1}'::jsonb, 'Chí mạng gây ×2.2 (thay ×1.5), −10% HP'),
   ('ls_1', 'Huyết Mạch', '🩸', 'ls', 'small', 1, 0.0, 17.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
   ('ls_2', 'Huyết Mạch II', '🩸', 'ls', 'small', 1, 0.0, 34.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
   ('ls_n', 'Hiến Tế Huyết Ma', '🩸', 'ls', 'notable', 2, 0.0, 51.0, '{"lifesteal": 0.02, "hp_pct": 0.03}'::jsonb, '+2% hút máu, +3% HP'),
   ('ls_side', 'Huyết Khí', '🩸', 'ls', 'small', 1, -19.8, 54.3, '{"lifesteal": 0.015}'::jsonb, '+1.5% hút máu'),
   ('ls_3', 'Huyết Mạch III', '🩸', 'ls', 'small', 1, 7.1, 67.6, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
-  ('ls_k', 'Khát Máu Vô Tận', '🩸', 'ls', 'keystone', 3, 0.0, 86.7, '{"lifesteal": 0.03, "low_hp_ls": 2, "def_pct": -0.1}'::jsonb, '+3% hút máu; HP dưới 30% thì hút máu ×2; −10% DEF'),
+  ('ls_k', 'Khát Máu Vô Tận', '🩸', 'ls', 'keystone', 2, 0.0, 86.7, '{"lifesteal": 0.03, "low_hp_ls": 2, "def_pct": -0.1}'::jsonb, '+3% hút máu; HP dưới 30% thì hút máu ×2; −10% DEF'),
   ('spd_1', 'Nhanh Nhẹn', '⚡', 'spd', 'small', 1, -14.7, 8.5, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
   ('spd_2', 'Nhanh Nhẹn II', '⚡', 'spd', 'small', 1, -29.4, 17.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
   ('spd_n', 'Khai Cuộc Thần Tốc', '⚡', 'spd', 'notable', 2, -44.2, 25.5, '{"opening": 1.5, "double": 0.02}'::jsonb, 'Đòn đầu mỗi trận ×1.5, +2% Đòn Kép'),
   ('spd_side', 'Lướt Gió', '⚡', 'spd', 'small', 1, -56.9, 10.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
   ('spd_3', 'Nhanh Nhẹn III', '⚡', 'spd', 'small', 1, -55.0, 40.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
-  ('spd_k', 'Lưỡi Dao Thủy Tinh', '⚡', 'spd', 'keystone', 3, -75.1, 43.4, '{"double": 0.12, "opening": 2.0, "hp_pct": -0.15}'::jsonb, '+12% Đòn Kép, đòn đầu ×2, −15% HP'),
+  ('spd_k', 'Lưỡi Dao Thủy Tinh', '⚡', 'spd', 'keystone', 2, -75.1, 43.4, '{"double": 0.12, "opening": 2.0, "hp_pct": -0.15}'::jsonb, '+12% Đòn Kép, đòn đầu ×2, −15% HP'),
   ('def_1', 'Giáp Trụ', '🛡️', 'def', 'small', 1, -14.7, -8.5, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
   ('def_2', 'Giáp Trụ II', '🛡️', 'def', 'small', 1, -29.4, -17.0, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
   ('def_n', 'Lũy Thép', '🛡️', 'def', 'notable', 2, -44.2, -25.5, '{"def_pct": 0.08, "dmg_red": 0.03}'::jsonb, '+8% DEF, giảm 3% sát thương nhận'),
   ('def_side', 'Bất Khả Xâm', '🛡️', 'def', 'small', 1, -37.2, -44.3, '{"def_pct": 0.05}'::jsonb, '+5% DEF'),
   ('def_3', 'Giáp Trụ III', '🛡️', 'def', 'small', 1, -62.1, -27.7, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
-  ('def_k', 'Pháo Đài Bất Động', '🛡️', 'def', 'keystone', 3, -75.1, -43.4, '{"dmg_red": 0.15, "atk_pct": -0.15}'::jsonb, 'Giảm 15% sát thương nhận, −15% ATK'),
+  ('def_k', 'Pháo Đài Bất Động', '🛡️', 'def', 'keystone', 2, -75.1, -43.4, '{"dmg_red": 0.15, "atk_pct": -0.15}'::jsonb, 'Giảm 15% sát thương nhận, −15% ATK'),
   ('bridge_hp_atk', 'Chiến Binh Bền Bỉ', '💠', 'bridge', 'small', 1, 19.5, -33.9, '{"hp_pct": 0.02, "atk_pct": 0.02}'::jsonb, '+2% HP, +2% ATK'),
   ('bridge_atk_crit', 'Sát Khí', '💠', 'bridge', 'small', 1, 39.1, -0.0, '{"atk_pct": 0.02, "crit": 0.01}'::jsonb, '+2% ATK, +1% chí mạng'),
   ('bridge_crit_ls', 'Vết Cắt Sâu', '💠', 'bridge', 'small', 1, 19.5, 33.9, '{"crit": 0.01, "lifesteal": 0.005}'::jsonb, '+1% chí mạng, +0.5% hút máu'),
@@ -4008,7 +4008,7 @@ create or replace function public.talent_points_total(p_level int, p_tower_best 
 returns int
 language sql
 immutable
-as $$ select (greatest(1, p_level) / 2) + (least(100, greatest(0, p_tower_best)) / 10); $$;
+as $$ select least(7, (greatest(1, p_level) / 2) + (least(100, greatest(0, p_tower_best)) / 10)); $$;
 
 -- plpgsql (không phải sql) để get_character_stats tạo trước bảng cây vẫn được
 -- (get_talent_totals: xem gần get_character_stats)

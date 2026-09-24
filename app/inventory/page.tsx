@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
@@ -8,8 +8,6 @@ import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
 import BottomNav from '../BottomNav'
 import InventoryManager, { type InventoryTab } from './InventoryManager'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const TABS: InventoryTab[] = ['equip', 'bag', 'craft']
 
@@ -89,7 +87,7 @@ export default async function InventoryPage({
     <main className="min-h-screen bg-[#100e0c] text-[#ece3d0] px-6 pt-16 pb-28">
       <div className="mx-auto max-w-2xl">
         <div className="mb-4">
-          <Link href="/" className={`${mono.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
+          <Link href="/" className={`${ui.className} text-xs text-[#8a7f68] hover:text-[#a89b7f]`}>
             ← Về nhân vật
           </Link>
         </div>
@@ -99,7 +97,7 @@ export default async function InventoryPage({
         </header>
 
         {inventoryError && (
-          <p className={`${mono.className} text-xs text-[#c98787] text-center mb-6`}>
+          <p className={`${ui.className} text-xs text-[#c98787] text-center mb-6`}>
             Không tải được túi đồ: {inventoryError.message}
           </p>
         )}

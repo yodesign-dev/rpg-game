@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Cinzel, JetBrains_Mono } from 'next/font/google'
+import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
@@ -11,9 +11,8 @@ import DungeonCta from './DungeonCta'
 import ExploreCta from './ExploreCta'
 import StatAllocator from './StatAllocator'
 import ActivityFeed, { type FeedEntry } from './ActivityFeed'
+import QuestBoard, { type DailyQuests } from './quests/QuestBoard'
 
-const display = Cinzel({ subsets: ['latin'], weight: ['500', '700'] })
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const CLASS_TAG: Record<string, string> = {
   warrior: 'text-[#e0a3a3] bg-[#8c3f3f]/[0.18] border-[#8c3f3f]/40',
@@ -55,13 +54,14 @@ export default async function CharacterPage() {
   // Hồi phục trước rồi mới đọc chỉ số (apply_regen ghi HP/AP mới vào DB)
   const regen = await applyRegen(supabase, character)
   const { currentAp, nextApMinutes } = regen
-  const [stats, { data: feed }] = await Promise.all([
+  const [stats, { data: feed }, { data: quests, error: questsError }] = await Promise.all([
     getCharacterStats(supabase, character.id),
     supabase
       .from('activity_feed')
       .select('id, character_id, character_name, character_title, kind, payload, created_at')
       .order('created_at', { ascending: false })
       .limit(15),
+    supabase.rpc('get_daily_quests', { p_character_id: character.id }),
   ])
 
   const maxHp = stats.maxHp
@@ -87,11 +87,11 @@ export default async function CharacterPage() {
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6">
           <SettingsMenu characterId={character.id} characterName={character.name} />
-          <p className={`${mono.className} text-sm tracking-[3px] text-[#a29fb3]`}>
+          <p className={`${ui.className} text-sm tracking-[3px] text-[#a29fb3]`}>
             🗼 TẦNG {character.tower_best}
           </p>
           <div
-            className={`${mono.className} flex items-center gap-2 bg-white/[0.06] border border-[#e0b050]/35
+            className={`${ui.className} flex items-center gap-2 bg-white/[0.06] border border-[#e0b050]/35
               rounded-full pl-2.5 pr-3.5 py-2`}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0b050" strokeWidth="1.6">
@@ -116,7 +116,7 @@ export default async function CharacterPage() {
                 </div>
               </div>
               <div
-                className={`${mono.className} absolute -right-1.5 -bottom-1.5 bg-[#1c1526] border-2 border-[#b06fd8]
+                className={`${ui.className} absolute -right-1.5 -bottom-1.5 bg-[#1c1526] border-2 border-[#b06fd8]
                   rounded-full px-2 py-0.5 text-xs font-bold text-[#e3caf5]`}
               >
                 Lv.{character.level}
@@ -127,13 +127,13 @@ export default async function CharacterPage() {
                 {character.name}
               </div>
               <div className="flex items-center gap-1.5 mt-2">
-                <span className={`${mono.className} text-xs tracking-wide border rounded-full px-2.5 py-1 ${tag}`}>
+                <span className={`${ui.className} text-xs tracking-wide border rounded-full px-2.5 py-1 ${tag}`}>
                   {cls.name.toUpperCase()}
                 </span>
               </div>
               <Link
                 href="/titles"
-                className={`${mono.className} inline-block mt-2 text-xs text-[#f0c060] hover:underline`}
+                className={`${ui.className} inline-block mt-2 text-xs text-[#f0c060] hover:underline`}
               >
                 {character.title
                   ? `${(character.title as { emoji: string }).emoji} ${(character.title as { name: string }).name}`
@@ -180,7 +180,20 @@ export default async function CharacterPage() {
         <ExploreCta />
         <DungeonCta />
 
-        <div className={`${mono.className} grid grid-cols-5 gap-2 mb-4`}>
+        {/* Nhiệm vụ hằng ngày — nằm ngay trong tab Nhân Vật */}
+        <section className="rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-3.5 sm:p-5 mb-4">
+          <div className="flex items-baseline justify-between gap-3 mb-3 px-1.5 sm:px-0">
+            <h2 className={`${display.className} text-xl text-white`}>📜 Nhiệm Vụ Hằng Ngày</h2>
+            <span className="text-xs text-[#7d7a8c]">làm mới 0h</span>
+          </div>
+          {questsError ? (
+            <p className="text-sm text-[#e09595]">Không tải được nhiệm vụ: {questsError.message}</p>
+          ) : (
+            <QuestBoard characterId={character.id} initial={quests as DailyQuests} />
+          )}
+        </section>
+
+        <div className={`${ui.className} grid grid-cols-5 gap-2 mb-4`}>
           {[
             { href: '/talents', icon: '🌟', label: 'Thiên phú' },
             { href: '/classes', icon: '📖', label: 'Lớp' },
@@ -191,10 +204,10 @@ export default async function CharacterPage() {
             <Link
               key={l.href}
               href={l.href}
-              className="rounded-[16px] bg-white/[0.045] border border-white/[0.09] py-3 text-center hover:bg-white/[0.08]"
+              className="rounded-[16px] bg-white/[0.045] border border-white/[0.09] py-3 px-1 text-center hover:bg-white/[0.08]"
             >
               <div className="text-xl">{l.icon}</div>
-              <div className="text-[11px] text-[#c9c4d4] mt-1 whitespace-nowrap">{l.label}</div>
+              <div className="text-xs leading-tight text-[#c9c4d4] mt-1">{l.label}</div>
             </Link>
           ))}
         </div>
@@ -248,7 +261,7 @@ function StatBar({
 }) {
   return (
     <div>
-      <div className={`${mono.className} flex items-center justify-between text-xs tracking-wide text-[#a29fb3] mb-2`}>
+      <div className={`${ui.className} flex items-center justify-between text-xs tracking-wide text-[#a29fb3] mb-2`}>
         <span className="flex items-center gap-1.5 font-medium">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.8">
             {icon}
@@ -264,7 +277,7 @@ function StatBar({
         />
       </div>
       {note && (
-        <p className={`${mono.className} text-xs text-[#7d7a8c] text-right mt-1.5`}>{note}</p>
+        <p className={`${ui.className} text-xs text-[#7d7a8c] text-right mt-1.5`}>{note}</p>
       )}
     </div>
   )

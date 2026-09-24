@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import {
   ATTRIBUTE_INFO,
@@ -12,7 +12,6 @@ import {
   type Attributes,
 } from '@/lib/character-stats'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 const EMPTY: Attributes = { str: 0, int: 0, agi: 0, dex: 0, vit: 0 }
 
@@ -117,7 +116,7 @@ export default function StatAllocator({
   }
 
   return (
-    <div className={`${mono.className} rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4`}>
+    <div className={`${ui.className} rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4`}>
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm tracking-[3px] text-[#a29fb3]">CHỈ SỐ</span>
         {remaining > 0 ? (
@@ -159,11 +158,11 @@ export default function StatAllocator({
                 <div className={`text-sm font-semibold ${isMain ? 'text-[#e3caf5]' : 'text-[#e5e1ed]'}`}>
                   {info.label}
                 </div>
-                {isMain && <div className="text-[10px] tracking-wide text-[#b06fd8]">CHÍNH</div>}
+                {isMain && <div className="text-xs tracking-wide text-[#b06fd8]">CHÍNH</div>}
               </div>
               <div className="flex-grow min-w-0">
                 <div className="text-xs text-[#a29fb3]">{info.name}</div>
-                <div className="text-[11px] leading-snug text-[#7d7a8c]">{info.effect(isMain)}</div>
+                <div className="text-xs leading-snug text-[#7d7a8c]">{info.effect(isMain)}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <StepButton label="−" disabled={busy || pending[key] === 0} onClick={() => bump(key, -1)} />
@@ -247,9 +246,9 @@ function Derived({
   const changed = format(next) !== format(value)
   return (
     <div className="rounded-xl bg-white/[0.04] px-2 py-2 text-center">
-      <div className="text-[11px] tracking-wide text-[#7d7a8c]">{label}</div>
+      <div className="text-xs tracking-wide text-[#7d7a8c]">{label}</div>
       <div className="text-sm font-semibold text-white">{format(value)}</div>
-      {changed && <div className="text-[11px] text-[#8fe0b0]">→ {format(next)}</div>}
+      {changed && <div className="text-xs text-[#8fe0b0]">→ {format(next)}</div>}
     </div>
   )
 }

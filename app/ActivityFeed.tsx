@@ -1,7 +1,6 @@
-import { JetBrains_Mono } from 'next/font/google'
+import { ui } from '@/app/fonts'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 
-const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '600'] })
 
 export type FeedEntry = {
   id: string
@@ -42,7 +41,7 @@ export default function ActivityFeed({
   now: number
 }) {
   return (
-    <div className={`${mono.className} rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4`}>
+    <div className={`${ui.className} rounded-[22px] bg-white/[0.045] border border-white/[0.09] p-5 mb-4`}>
       <div className="text-sm tracking-[3px] text-[#a29fb3] mb-3">BẢNG TIN</div>
 
       {entries.length === 0 ? (
@@ -94,7 +93,7 @@ export default function ActivityFeed({
                       {effect && <span className="text-[#f0c060]/80"> · {effect.name}</span>}
                     </p>
                   )}
-                  <p className="text-[11px] text-[#7d7a8c]">{timeAgo(e.created_at, now)}</p>
+                  <p className="text-xs text-[#7d7a8c]">{timeAgo(e.created_at, now)}</p>
                 </div>
               </li>
             )

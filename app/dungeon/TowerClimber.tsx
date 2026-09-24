@@ -127,7 +127,7 @@ export default function TowerClimber({
           {best}
           <span className="text-sm text-[#7d7a8c]"> / 100</span>
         </p>
-        <p className="text-[11px] text-[#7d7a8c] mt-1">
+        <p className="text-xs text-[#7d7a8c] mt-1">
           Lần đầu qua tầng: +50% vàng + nguyên liệu · Tầng boss lần đầu: chắc chắn rơi trang bị
         </p>
       </div>
@@ -167,7 +167,7 @@ export default function TowerClimber({
           onChange={(e) => setMaxFloors(Number(e.target.value))}
           className="w-full accent-[#b06fd8]"
         />
-        <p className="text-[11px] text-[#7d7a8c] mt-2">
+        <p className="text-xs text-[#7d7a8c] mt-2">
           Tối đa {maxFloors * AP_PER_FLOOR} AP · AP hiện có đủ cho {affordable} tầng. Chỉ trừ AP cho tầng thật sự đánh.
         </p>
       </div>
