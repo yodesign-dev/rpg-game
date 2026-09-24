@@ -39,7 +39,7 @@ export default async function SkillsPage() {
   const cls = character.classes as { name: string; icon: string | null }
 
   return (
-    <GlassPage title="Kỹ Năng" subtitle={`${cls.icon ?? ''} ${cls.name} · Cấp ${character.level} · trang bị 2 chủ động + 1 bị động`}>
+    <GlassPage title="Kỹ Năng" subtitle={`${cls.icon ?? ''} ${cls.name} · Cấp ${character.level} · ô chủ động thứ 2 mở ở Lv8, ô bị động ở Lv5`}>
       <SkillManager
         characterId={character.id}
         characterLevel={character.level}

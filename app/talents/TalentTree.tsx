@@ -24,6 +24,9 @@ export type TalentState = {
   learned: string[]
   totals: Record<string, number>
   reset_cost: number
+  level?: number
+  notable_level?: number
+  keystone_level?: number
 }
 
 const RADIUS: Record<TalentNode['kind'], number> = { start: 6, small: 3.6, notable: 5, keystone: 6.6 }
@@ -84,7 +87,11 @@ export default function TalentTree({
   }, [edges])
 
   const reachable = (key: string) => !learned.has(key) && (neighbors[key] ?? []).some((n) => learned.has(n))
-  const learnable = (n: TalentNode) => reachable(n.key) && state.available >= n.cost
+  // Tầng ô mở theo cấp: ô lớn / ô trùm cần đủ cấp mới học được
+  const tierLevel = (n: TalentNode) =>
+    n.kind === 'notable' ? (state.notable_level ?? 0) : n.kind === 'keystone' ? (state.keystone_level ?? 0) : 0
+  const tierLocked = (n: TalentNode) => (state.level ?? Infinity) < tierLevel(n)
+  const learnable = (n: TalentNode) => reachable(n.key) && state.available >= n.cost && !tierLocked(n)
 
   const sel = selected ? byKey[selected] : null
   const hov = hovered ? byKey[hovered] : null
@@ -94,9 +101,11 @@ export default function TalentTree({
       ? { text: '✓ Đã học', cls: 'text-[#f0c060]' }
       : learnable(n)
         ? { text: 'Bấm để học', cls: 'text-[#8fe0b0]' }
-        : !reachable(n.key)
-          ? { text: '🔒 Cần học ô liền kề trước', cls: 'text-[#8a8499]' }
-          : { text: `Thiếu điểm (cần ${n.cost})`, cls: 'text-[#e09595]' }
+        : tierLocked(n)
+          ? { text: `🔒 Mở từ cấp ${tierLevel(n)}`, cls: 'text-[#8a8499]' }
+          : !reachable(n.key)
+            ? { text: '🔒 Cần học ô liền kề trước', cls: 'text-[#8a8499]' }
+            : { text: `Thiếu điểm (cần ${n.cost})`, cls: 'text-[#e09595]' }
 
   async function learn(key: string) {
     setBusy(true)
@@ -254,7 +263,15 @@ export default function TalentTree({
                 disabled={busy || !learnable(sel)}
                 className="shrink-0 rounded-xl border border-[#8fe0b0]/60 bg-[#8fe0b0]/15 text-[#c8f5dc] text-xs font-semibold px-3 py-2 disabled:opacity-30"
               >
-                {busy ? '…' : !reachable(sel.key) ? 'Chưa liền kề' : state.available < sel.cost ? 'Thiếu điểm' : 'Học'}
+                {busy
+                  ? '…'
+                  : tierLocked(sel)
+                    ? `🔒 Lv${tierLevel(sel)}`
+                    : !reachable(sel.key)
+                      ? 'Chưa liền kề'
+                      : state.available < sel.cost
+                        ? 'Thiếu điểm'
+                        : 'Học'}
               </button>
             )}
           </div>

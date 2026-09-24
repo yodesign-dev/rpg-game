@@ -5,7 +5,9 @@ import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
 
-const ACTIVE_MAX = 2
+// Ô chủ động thứ 2 mở ở cấp 8; ô bị động dùng được khi có skill bị động đầu tiên (cấp 5)
+const ACTIVE_SLOT_2_LEVEL = 8
+const PASSIVE_SLOT_LEVEL = 5
 const PASSIVE_MAX = 1
 
 type Skill = {
@@ -44,6 +46,7 @@ export default function SkillManager({
   const passiveSkills = skills.filter((s) => s.skill_type === 'passive')
   const activeCount = equipped.filter((e) => activeSkills.some((s) => s.id === e.skill_id)).length
   const passiveCount = equipped.filter((e) => passiveSkills.some((s) => s.id === e.skill_id)).length
+  const activeMax = characterLevel >= ACTIVE_SLOT_2_LEVEL ? 2 : 1
   const equippedOf = (list: Skill[]) => list.filter((s) => equipped.some((e) => e.skill_id === s.id))
 
   async function equip(skill: Skill) {
@@ -98,8 +101,16 @@ export default function SkillManager({
         <h2 className={`${ui.className} text-xs font-semibold tracking-[2px] text-[#a29fb3] mb-3`}>ĐANG TRANG BỊ</h2>
         <div className="grid grid-cols-3 gap-2">
           {[
-            ...Array.from({ length: ACTIVE_MAX }, (_, i) => ({ kind: 'Chủ động', skill: equippedOf(activeSkills)[i] })),
-            ...Array.from({ length: PASSIVE_MAX }, (_, i) => ({ kind: 'Bị động', skill: equippedOf(passiveSkills)[i] })),
+            ...[0, 1].map((i) => ({
+              kind: 'Chủ động',
+              skill: equippedOf(activeSkills)[i],
+              lockedAt: i === 1 && characterLevel < ACTIVE_SLOT_2_LEVEL ? ACTIVE_SLOT_2_LEVEL : null,
+            })),
+            {
+              kind: 'Bị động',
+              skill: equippedOf(passiveSkills)[0],
+              lockedAt: characterLevel < PASSIVE_SLOT_LEVEL ? PASSIVE_SLOT_LEVEL : null,
+            },
           ].map((slot, i) => (
             <div
               key={i}
@@ -107,9 +118,9 @@ export default function SkillManager({
                 slot.skill ? 'border-[#8fe0b0]/40 bg-[#8fe0b0]/[0.07]' : 'border-dashed border-white/15'
               }`}
             >
-              <div className="text-2xl leading-none h-7">{slot.skill?.icon ?? '＋'}</div>
+              <div className="text-2xl leading-none h-7">{slot.skill?.icon ?? (slot.lockedAt ? '🔒' : '＋')}</div>
               <div className={`${ui.className} text-xs mt-1.5 truncate ${slot.skill ? 'text-white' : 'text-[#7d7a8c]'}`}>
-                {slot.skill?.name ?? 'Trống'}
+                {slot.skill?.name ?? (slot.lockedAt ? `Mở ở Lv${slot.lockedAt}` : 'Trống')}
               </div>
               <div className={`${ui.className} text-[11px] text-[#7d7a8c]`}>{slot.kind}</div>
             </div>
@@ -119,12 +130,12 @@ export default function SkillManager({
 
       <SkillGroup
         title="CHỦ ĐỘNG"
-        note={`${activeCount} / ${ACTIVE_MAX} đã trang bị`}
+        note={`${activeCount} / ${activeMax} đã trang bị`}
         skills={activeSkills}
         equipped={equipped}
         characterLevel={characterLevel}
         pendingSkillId={pendingSkillId}
-        slotFull={activeCount >= ACTIVE_MAX}
+        slotFull={activeCount >= activeMax}
         onEquip={equip}
         onUnequip={unequip}
       />

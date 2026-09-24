@@ -2213,7 +2213,8 @@ begin
   from character_equipped_skills ces join skills s on s.id = ces.skill_id
   where ces.character_id = new.character_id and s.skill_type = v_skill_type;
 
-  v_limit := case when v_skill_type = 'passive' then 1 else 2 end;
+  -- Ô chủ động thứ 2 mở ở cấp 8 (ô bị động mở cùng skill bị động đầu tiên, cấp 5)
+  v_limit := case when v_skill_type = 'passive' then 1 when v_level >= 8 then 2 else 1 end;
 
   if v_count >= v_limit then
     raise exception 'Đã đủ số kỹ năng % được trang bị', v_skill_type;
@@ -4188,7 +4189,12 @@ create or replace function public.talent_points_total(p_level int, p_tower_best 
 returns int
 language sql
 immutable
-as $$ select least(7, (greatest(1, p_level) / 2) + (least(100, greatest(0, p_tower_best)) / 10)); $$;
+as $$
+  -- 1 điểm ở mỗi mốc cấp 6/14/22/30/50/65/75 + 1 điểm mỗi 25 tầng Tháp, tối đa 7
+  select least(7,
+    (select count(*)::int from unnest(array[6, 14, 22, 30, 50, 65, 75]) m where m <= p_level)
+    + least(100, greatest(0, p_tower_best)) / 25);
+$$;
 
 -- plpgsql (không phải sql) để get_character_stats tạo trước bảng cây vẫn được
 -- (get_talent_totals: xem gần get_character_stats)
@@ -4213,7 +4219,8 @@ begin
     'total', v_total, 'spent', v_spent, 'available', v_total - v_spent,
     'learned', (select coalesce(jsonb_agg(ct.node_key), '[]'::jsonb) from character_talents ct where ct.character_id = p_character_id),
     'totals', get_talent_totals(p_character_id),
-    'reset_cost', 30 * v_level
+    'reset_cost', 30 * v_level,
+    'level', v_level, 'notable_level', 20, 'keystone_level', 40
   );
 end;
 $$;
@@ -4233,6 +4240,10 @@ begin
 
   select n.cost, n.kind into v_cost, v_kind from talent_nodes n where n.key = p_node_key;
   if not found or v_kind = 'start' then raise exception 'Không tìm thấy ô thiên phú này'; end if;
+
+  -- Tầng ô mở theo cấp: ô lớn từ cấp 20, ô trùm từ cấp 40
+  if v_kind = 'notable' and v_level < 20 then raise exception 'Ô lớn mở từ cấp 20'; end if;
+  if v_kind = 'keystone' and v_level < 40 then raise exception 'Ô trùm mở từ cấp 40'; end if;
 
   if exists (select 1 from character_talents ct where ct.character_id = p_character_id and ct.node_key = p_node_key) then
     raise exception 'Đã học ô này rồi';
@@ -4310,33 +4321,33 @@ insert into skills (class_id, key, name, description, skill_type, power_multipli
 select cl.id, v.key, v.name, v.description, v.skill_type, v.power, v.cooldown, v.effect, v.effect_type, v.effect_value, v.unlock_level, v.icon
 from (values
   ('warrior', 'warrior_slash', 'Chém Mạnh', '150% ATK', 'active', 1.5, 3, '{}'::jsonb, null, null, 1, '⚔️'),
-  ('warrior', 'warrior_knight', 'Kiếm Hiệp Sĩ', '160% ATK, xuyên 25% DEF', 'active', 1.6, 3, '{"pierce": 0.25}'::jsonb, null, null, 10, '🗡️'),
-  ('warrior', 'warrior_drain', 'Hút Máu', '140% ATK, hồi HP bằng 20% sát thương gây ra', 'active', 1.4, 3, '{"lifesteal": 0.2}'::jsonb, null, null, 20, '🩸'),
-  ('warrior', 'warrior_despair', 'Chém Tuyệt Vọng', 'Tốn 15% HP hiện tại, 240% ATK xuyên giáp hoàn toàn. Chỉ dùng khi HP ≥ 50%', 'active', 2.4, 5, '{"hp_cost": 0.15, "pierce": 1, "min_hp": 0.5}'::jsonb, null, null, 30, '💥'),
-  ('warrior', 'warrior_holy', 'Thánh Kích', '140% ATK xuyên giáp, hồi HP bằng 15% sát thương', 'active', 1.4, 3, '{"pierce": 1, "lifesteal": 0.15}'::jsonb, null, null, 40, '✨'),
-  ('warrior', 'warrior_armor', 'Giáp Dày', 'Giảm 10% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.1, 1, '🛡️'),
-  ('warrior', 'warrior_will', 'Ý Chí Thép', 'Hút máu 5% mọi đòn đánh', 'passive', null, 0, '{}'::jsonb, 'lifesteal', 0.05, 15, '❤️'),
+  ('warrior', 'warrior_knight', 'Kiếm Hiệp Sĩ', '160% ATK, xuyên 25% DEF', 'active', 1.6, 3, '{"pierce": 0.25}'::jsonb, null, null, 12, '🗡️'),
+  ('warrior', 'warrior_drain', 'Hút Máu', '140% ATK, hồi HP bằng 20% sát thương gây ra', 'active', 1.4, 3, '{"lifesteal": 0.2}'::jsonb, null, null, 25, '🩸'),
+  ('warrior', 'warrior_despair', 'Chém Tuyệt Vọng', 'Tốn 15% HP hiện tại, 240% ATK xuyên giáp hoàn toàn. Chỉ dùng khi HP ≥ 50%', 'active', 2.4, 5, '{"hp_cost": 0.15, "pierce": 1, "min_hp": 0.5}'::jsonb, null, null, 45, '💥'),
+  ('warrior', 'warrior_holy', 'Thánh Kích', '140% ATK xuyên giáp, hồi HP bằng 15% sát thương', 'active', 1.4, 3, '{"pierce": 1, "lifesteal": 0.15}'::jsonb, null, null, 60, '✨'),
+  ('warrior', 'warrior_armor', 'Giáp Dày', 'Giảm 10% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.1, 5, '🛡️'),
+  ('warrior', 'warrior_will', 'Ý Chí Thép', 'Hút máu 5% mọi đòn đánh', 'passive', null, 0, '{}'::jsonb, 'lifesteal', 0.05, 35, '❤️'),
   ('mage', 'mage_fireball', 'Cầu Lửa', '160% ATK phép, xuyên giáp', 'active', 1.6, 4, '{"pierce": 1}'::jsonb, null, null, 1, '🔥'),
-  ('mage', 'mage_frost', 'Băng Tiễn', '140% ATK phép xuyên giáp, 20% đóng băng quái 1 lượt', 'active', 1.4, 3, '{"pierce": 1, "stun": 0.2}'::jsonb, null, null, 10, '❄️'),
-  ('mage', 'mage_shatter', 'Băng Vỡ', '200% ATK phép xuyên giáp; +40% nếu quái vừa bị đóng băng', 'active', 2.0, 5, '{"pierce": 1, "bonus_stunned": 0.4}'::jsonb, null, null, 20, '🧊'),
-  ('mage', 'mage_inferno', 'Hỏa Ngục', '220% ATK phép xuyên giáp', 'active', 2.2, 5, '{"pierce": 1}'::jsonb, null, null, 30, '🌋'),
-  ('mage', 'mage_meteor', 'Thiên Thạch', '130% ATK phép xuyên giáp + thiêu 10% ATK mỗi lượt trong 3 lượt', 'active', 1.3, 4, '{"pierce": 1, "dot": 0.1, "dot_turns": 3, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 40, '☄️'),
-  ('mage', 'mage_shield', 'Khiên Mana', 'Giảm 12% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.12, 1, '🔮'),
-  ('mage', 'mage_focus', 'Tập Trung', '+8% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.08, 15, '🎯'),
+  ('mage', 'mage_frost', 'Băng Tiễn', '140% ATK phép xuyên giáp, 20% đóng băng quái 1 lượt', 'active', 1.4, 3, '{"pierce": 1, "stun": 0.2}'::jsonb, null, null, 12, '❄️'),
+  ('mage', 'mage_shatter', 'Băng Vỡ', '200% ATK phép xuyên giáp; +40% nếu quái vừa bị đóng băng', 'active', 2.0, 5, '{"pierce": 1, "bonus_stunned": 0.4}'::jsonb, null, null, 25, '🧊'),
+  ('mage', 'mage_inferno', 'Hỏa Ngục', '220% ATK phép xuyên giáp', 'active', 2.2, 5, '{"pierce": 1}'::jsonb, null, null, 45, '🌋'),
+  ('mage', 'mage_meteor', 'Thiên Thạch', '130% ATK phép xuyên giáp + thiêu 10% ATK mỗi lượt trong 3 lượt', 'active', 1.3, 4, '{"pierce": 1, "dot": 0.1, "dot_turns": 3, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 60, '☄️'),
+  ('mage', 'mage_shield', 'Khiên Mana', 'Giảm 12% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.12, 5, '🔮'),
+  ('mage', 'mage_focus', 'Tập Trung', '+8% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.08, 35, '🎯'),
   ('assassin', 'assassin_stab', 'Đâm Hiểm', '180% ATK', 'active', 1.8, 4, '{}'::jsonb, null, null, 1, '🗡️'),
-  ('assassin', 'assassin_venom', 'Đòn Độc', '120% ATK + độc 15% ATK mỗi lượt trong 2 lượt', 'active', 1.2, 3, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Độc"}'::jsonb, null, null, 10, '🐍'),
-  ('assassin', 'assassin_iai', 'Iaijutsu', '190% ATK, xuyên 30% DEF', 'active', 1.9, 4, '{"pierce": 0.3}'::jsonb, null, null, 20, '⚔️'),
-  ('assassin', 'assassin_divine', 'Kiếm Thần', '160% ATK xuyên giáp hoàn toàn', 'active', 1.6, 4, '{"pierce": 1}'::jsonb, null, null, 30, '🌙'),
-  ('assassin', 'assassin_execute', 'Kết Liễu', '160% ATK; +60% nếu quái còn dưới 30% HP', 'active', 1.6, 5, '{"execute": 0.6}'::jsonb, null, null, 40, '💀'),
-  ('assassin', 'assassin_critdmg', 'Sát Thương Chí Mạng', 'Đòn chí mạng gây thêm 30% sát thương', 'passive', null, 0, '{}'::jsonb, 'crit_damage', 0.3, 1, '💢'),
-  ('assassin', 'assassin_shadow', 'Bóng Tối', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 15, '🌑'),
+  ('assassin', 'assassin_venom', 'Đòn Độc', '120% ATK + độc 15% ATK mỗi lượt trong 2 lượt', 'active', 1.2, 3, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Độc"}'::jsonb, null, null, 12, '🐍'),
+  ('assassin', 'assassin_iai', 'Iaijutsu', '190% ATK, xuyên 30% DEF', 'active', 1.9, 4, '{"pierce": 0.3}'::jsonb, null, null, 25, '⚔️'),
+  ('assassin', 'assassin_divine', 'Kiếm Thần', '160% ATK xuyên giáp hoàn toàn', 'active', 1.6, 4, '{"pierce": 1}'::jsonb, null, null, 45, '🌙'),
+  ('assassin', 'assassin_execute', 'Kết Liễu', '160% ATK; +60% nếu quái còn dưới 30% HP', 'active', 1.6, 5, '{"execute": 0.6}'::jsonb, null, null, 60, '💀'),
+  ('assassin', 'assassin_critdmg', 'Sát Thương Chí Mạng', 'Đòn chí mạng gây thêm 30% sát thương', 'passive', null, 0, '{}'::jsonb, 'crit_damage', 0.3, 5, '💢'),
+  ('assassin', 'assassin_shadow', 'Bóng Tối', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 35, '🌑'),
   ('archer', 'archer_shot', 'Mũi Tên Đánh Dấu', '150% ATK', 'active', 1.5, 3, '{}'::jsonb, null, null, 1, '🏹'),
-  ('archer', 'archer_pierce', 'Xuyên Tâm Tiễn', '140% ATK, xuyên 50% DEF', 'active', 1.4, 3, '{"pierce": 0.5}'::jsonb, null, null, 10, '🎯'),
-  ('archer', 'archer_aimed', 'Nhắm Bắn', '180% ATK; +30% từ lượt thứ 3 trở đi', 'active', 1.8, 5, '{"streak": 0.3}'::jsonb, null, null, 20, '🦅'),
-  ('archer', 'archer_fire', 'Tên Lửa', '130% ATK + thiêu 15% ATK mỗi lượt trong 2 lượt', 'active', 1.3, 4, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 30, '🔥'),
-  ('archer', 'archer_volley', 'Liên Xạ', 'Bắn 3 mũi, mỗi mũi 70% ATK', 'active', 0.7, 5, '{"hits": 3}'::jsonb, null, null, 40, '🌧️'),
-  ('archer', 'archer_eagle', 'Mắt Đại Bàng', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 1, '👁️'),
-  ('archer', 'archer_reflex', 'Phản Xạ', 'Giảm 8% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.08, 15, '🍃')
+  ('archer', 'archer_pierce', 'Xuyên Tâm Tiễn', '140% ATK, xuyên 50% DEF', 'active', 1.4, 3, '{"pierce": 0.5}'::jsonb, null, null, 12, '🎯'),
+  ('archer', 'archer_aimed', 'Nhắm Bắn', '180% ATK; +30% từ lượt thứ 3 trở đi', 'active', 1.8, 5, '{"streak": 0.3}'::jsonb, null, null, 25, '🦅'),
+  ('archer', 'archer_fire', 'Tên Lửa', '130% ATK + thiêu 15% ATK mỗi lượt trong 2 lượt', 'active', 1.3, 4, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 45, '🔥'),
+  ('archer', 'archer_volley', 'Liên Xạ', 'Bắn 3 mũi, mỗi mũi 70% ATK', 'active', 0.7, 5, '{"hits": 3}'::jsonb, null, null, 60, '🌧️'),
+  ('archer', 'archer_eagle', 'Mắt Đại Bàng', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 5, '👁️'),
+  ('archer', 'archer_reflex', 'Phản Xạ', 'Giảm 8% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.08, 35, '🍃')
 ) as v(class_key, key, name, description, skill_type, power, cooldown, effect, effect_type, effect_value, unlock_level, icon)
 join classes cl on cl.key = v.class_key;
 
@@ -4379,6 +4390,39 @@ as $$
 $$;
 
 -- Nhân vật mới: tự trang bị skill chủ động + bị động cấp 1 (trước đây chỉ đánh thường)
+-- Lấp ô kỹ năng còn trống bằng skill mạnh nhất đã mở (cấp mở cao nhất). Gọi khi tạo
+-- nhân vật và khi lên cấp — lên cấp 5/8/12… tự có skill mới thay vì ô trống.
+create or replace function public.fill_skill_slots(p_character_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_class_id uuid; v_level int; v_type text; v_free int;
+begin
+  select c.class_id, c.level into v_class_id, v_level from characters c where c.id = p_character_id;
+  if not found then return; end if;
+
+  foreach v_type in array array['active', 'passive'] loop
+    v_free := case when v_type = 'passive' then 1 when v_level >= 8 then 2 else 1 end
+      - (select count(*) from character_equipped_skills ces join skills s on s.id = ces.skill_id
+         where ces.character_id = p_character_id and s.skill_type = v_type);
+    continue when v_free <= 0;
+
+    insert into character_equipped_skills (character_id, skill_id)
+    select p_character_id, s.id from skills s
+    where s.class_id = v_class_id and s.skill_type = v_type and s.unlock_level <= v_level
+      and not exists (select 1 from character_equipped_skills ces
+                      where ces.character_id = p_character_id and ces.skill_id = s.id)
+    order by s.unlock_level desc
+    limit v_free;
+  end loop;
+end;
+$$;
+
+revoke execute on function public.fill_skill_slots(uuid) from public, anon, authenticated;
+
 create or replace function public.equip_starter_skills()
 returns trigger
 language plpgsql
@@ -4386,9 +4430,7 @@ security definer
 set search_path = 'public'
 as $$
 begin
-  insert into character_equipped_skills (character_id, skill_id)
-  select new.id, s.id from skills s
-  where s.class_id = new.class_id and s.unlock_level <= 1;
+  perform fill_skill_slots(new.id);
   return new;
 end;
 $$;
@@ -4397,3 +4439,22 @@ drop trigger if exists equip_starter_skills on characters;
 create trigger equip_starter_skills
   after insert on characters
   for each row execute function public.equip_starter_skills();
+
+-- Lên cấp: tự lấp ô kỹ năng mới mở
+create or replace function public.fill_skill_slots_on_level_up()
+returns trigger
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  perform fill_skill_slots(new.id);
+  return new;
+end;
+$$;
+
+drop trigger if exists fill_skill_slots_on_level_up on characters;
+create trigger fill_skill_slots_on_level_up
+  after update of level on characters
+  for each row when (new.level > old.level)
+  execute function public.fill_skill_slots_on_level_up();

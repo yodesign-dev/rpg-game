@@ -263,7 +263,8 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
         {tab === 'talents' && (
           <>
             <p className="text-sm text-[#a29fb3] mb-4">
-              Tối đa 7 điểm: 1 điểm mỗi 2 cấp + 1 điểm mỗi 10 tầng Tháp. Chỉ học được ô liền kề ô đã học.
+              Điểm mở ở cấp 6 / 14 / 22 / 30 / 50 / 65 / 75, cộng 1 điểm mỗi 25 tầng Tháp (tối đa 7). Ô lớn mở từ
+              cấp 20, ô trùm từ cấp 40. Chỉ học được ô liền kề ô đã học.
             </p>
             {!talentState || tree?.[0].error ? (
               <p className="text-sm text-[#e09595]">Không tải được cây thiên phú.</p>
