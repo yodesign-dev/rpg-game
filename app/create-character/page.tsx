@@ -37,9 +37,19 @@ export default function CreateCharacterPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [account, setAccount] = useState<string | null>(null)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
+    // Tên tài khoản đang đăng nhập: tên Discord (user_metadata) hoặc email
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user
+      if (!u) return
+      const meta = u.user_metadata ?? {}
+      const discord = u.app_metadata?.provider === 'discord'
+      setAccount(`${discord ? 'Discord · ' : ''}${meta.full_name ?? meta.name ?? u.email ?? 'tài khoản'}`)
+    })
     supabase
       .from('classes')
       .select('*')
@@ -50,6 +60,13 @@ export default function CreateCharacterPage() {
         setLoading(false)
       })
   }, [])
+
+  // Chưa có nhân vật thì màn này là lối ra duy nhất — cho phép đăng xuất để đổi tài khoản
+  async function signOut() {
+    setSigningOut(true)
+    await createClient().auth.signOut()
+    window.location.href = '/login'
+  }
 
   async function handleCreate() {
     if (!selected || !name.trim()) return
@@ -84,6 +101,21 @@ export default function CreateCharacterPage() {
   return (
     <main className="min-h-screen bg-[#07070a] text-[#f2ede4] px-6 py-16">
       <div className="mx-auto max-w-5xl">
+        <div className={`${ui.className} flex flex-wrap items-center justify-end gap-x-3 gap-y-1 -mt-8 mb-8 text-xs`}>
+          {account && (
+            <span className="text-[#8a8499]">
+              Đang đăng nhập: <span className="text-[#c9c4d4]">{account}</span>
+            </span>
+          )}
+          <button
+            onClick={signOut}
+            disabled={signingOut}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-[#c9c4d4] hover:bg-white/[0.06] disabled:opacity-40"
+          >
+            {signingOut ? 'Đang đăng xuất…' : 'Đăng xuất / Đổi tài khoản'}
+          </button>
+        </div>
+
         <header className="text-center mb-14">
           <p className={`${ui.className} text-xs tracking-widest text-[#8a8499] mb-3`}>
             Chương I — Khởi Đầu
