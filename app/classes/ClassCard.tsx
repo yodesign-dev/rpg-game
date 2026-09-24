@@ -1,4 +1,5 @@
 import ClassArt from '../ClassArt'
+import SkillIcon from '../components/SkillIcon'
 
 export type ClassInfo = {
   key: string
@@ -19,6 +20,7 @@ export type ClassInfo = {
     description: string
     skill_type: 'active' | 'passive'
     cooldown?: number
+    icon?: string | null
     power_multiplier: number | null
     unlock_level: number
   }[]
@@ -60,18 +62,24 @@ export default function ClassCard({ c, highlight = false }: { c: ClassInfo; high
 
       <ul className="mt-3 space-y-1 text-xs">
         {actives.map((s) => (
-          <li key={s.key} className="text-[#8fa4d8]">
-            ⚔️ <b className="text-[#b8c8f0]">{s.name}</b> — {s.description}
+          <li key={s.key} className="flex items-start gap-2 text-[#8fa4d8]">
+            <SkillIcon icon={s.icon ?? null} classKey={c.key} size={24} />
+            <span>
+            <b className="text-[#b8c8f0]">{s.name}</b> — {s.description}
             <span className="text-[#6b7494]">
               {!!s.cooldown && ` · hồi ${s.cooldown} lượt`}
               {s.unlock_level > 1 && ` (Lv${s.unlock_level})`}
             </span>
+            </span>
           </li>
         ))}
         {passives.map((s) => (
-          <li key={s.key} className="text-[#8fa4d8]">
-            🌙 <b className="text-[#b8c8f0]">{s.name}</b> — {s.description}
-            {s.unlock_level > 1 && <span className="text-[#6b7494]"> (Lv{s.unlock_level})</span>}
+          <li key={s.key} className="flex items-start gap-2 text-[#8fa4d8]">
+            <SkillIcon icon={s.icon ?? null} classKey={c.key} size={24} />
+            <span>
+              <b className="text-[#b8c8f0]">{s.name}</b> — {s.description}
+              {s.unlock_level > 1 && <span className="text-[#6b7494]"> (Lv{s.unlock_level})</span>}
+            </span>
           </li>
         ))}
       </ul>

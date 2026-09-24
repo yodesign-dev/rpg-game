@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
-import Portrait from '../components/Portrait'
+import PortraitCard from '../components/PortraitCard'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
 
@@ -216,6 +216,7 @@ export default function InventoryManager({
   classIcon,
   classKey,
   portrait,
+  frame,
   items,
   currentHp,
   baseMaxHp,
@@ -234,6 +235,7 @@ export default function InventoryManager({
   classIcon: string | null
   classKey?: string
   portrait?: string | null
+  frame?: string | null
   items: InventoryRow[]
   currentHp: number
   baseMaxHp: number
@@ -1060,9 +1062,7 @@ export default function InventoryManager({
 
             <div className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0">
               {classKey ? (
-                <div className="h-36 w-24 sm:h-44 sm:w-28">
-                  <Portrait classKey={classKey} portrait={portrait} />
-                </div>
+                <PortraitCard classKey={classKey} portrait={portrait} frame={frame} className="w-24 sm:w-28" />
               ) : (
                 <div className="text-5xl sm:text-6xl">{classIcon}</div>
               )}

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getCurrentCharacter } from '@/lib/current-character'
 import GlassPage from '../GlassPage'
+import PortraitCard from '../components/PortraitCard'
 
 const SORTS = [
   { key: 'level', label: 'Cấp độ' },
@@ -15,6 +16,8 @@ type Row = {
   out_name: string
   out_class_key: string
   out_class_name: string
+  out_portrait: string | null
+  out_frame: string | null
   out_level: number
   out_power: number
   out_boss_kills: number
@@ -70,6 +73,7 @@ export default async function RankingPage({ searchParams }: { searchParams: Prom
               <span className="w-8 text-center text-sm shrink-0">
                 {r.out_rank <= 3 ? MEDAL[r.out_rank - 1] : <span className="text-[#7d7a8c]">#{r.out_rank}</span>}
               </span>
+              <PortraitCard classKey={r.out_class_key} portrait={r.out_portrait} frame={r.out_frame} className="w-9" />
               <div className="flex-grow min-w-0">
                 <p className={`text-sm truncate ${me ? 'text-[#e3caf5] font-semibold' : 'text-white'}`}>
                   {r.out_name}

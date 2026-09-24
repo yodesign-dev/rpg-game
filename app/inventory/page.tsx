@@ -96,6 +96,7 @@ export default async function InventoryPage({
         classIcon={cls.icon}
         classKey={cls.key}
         portrait={character.portrait}
+        frame={character.frame}
         items={(inventory as any) ?? []}
         currentHp={currentHp}
         baseMaxHp={baseMaxHp}

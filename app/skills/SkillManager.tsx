@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
+import SkillIcon, { skillClassKey } from '../components/SkillIcon'
 
 
 // Ô chủ động thứ 2 mở ở cấp 8; ô bị động dùng được khi có skill bị động đầu tiên (cấp 5)
@@ -118,7 +119,15 @@ export default function SkillManager({
                 slot.skill ? 'border-[#8fe0b0]/40 bg-[#8fe0b0]/[0.07]' : 'border-dashed border-white/15'
               }`}
             >
-              <div className="text-2xl leading-none h-7">{slot.skill?.icon ?? (slot.lockedAt ? '🔒' : '＋')}</div>
+              <div className="flex h-10 items-center justify-center text-2xl leading-none">
+                {slot.skill ? (
+                  <SkillIcon icon={slot.skill.icon} classKey={skillClassKey(slot.skill.key)} size={40} />
+                ) : slot.lockedAt ? (
+                  '🔒'
+                ) : (
+                  '＋'
+                )}
+              </div>
               <div className={`${ui.className} text-xs mt-1.5 truncate ${slot.skill ? 'text-white' : 'text-[#7d7a8c]'}`}>
                 {slot.skill?.name ?? (slot.lockedAt ? `Mở ở Lv${slot.lockedAt}` : 'Trống')}
               </div>
@@ -198,7 +207,7 @@ function SkillGroup({
                 ${isLocked ? 'opacity-40' : ''}`}
             >
               <div className="flex items-start gap-3">
-                <span className="text-xl leading-none mt-0.5">{skill.icon}</span>
+                <SkillIcon icon={skill.icon} classKey={skillClassKey(skill.key)} size={44} locked={isLocked} />
                 <div>
                   <p className="font-semibold text-white">{skill.name}</p>
                   <p className={`${ui.className} text-xs text-[#a29fb3] mt-1`}>
