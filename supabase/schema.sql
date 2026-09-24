@@ -407,7 +407,7 @@ begin
   select coalesce(jsonb_object_agg(s.k, s.val), '{}'::jsonb) into v
   from (
     select e.key as k,
-           case when e.key in ('crit_mult', 'opening', 'low_hp_ls')
+           case when e.key in ('crit_mult', 'opening', 'low_hp_ls', 'parry_mult', 'echo_pct')
                 then max(e.value::text::numeric) else sum(e.value::text::numeric) end as val
     from character_talents ct
     join talent_nodes n on n.key = ct.node_key
@@ -415,6 +415,16 @@ begin
     where ct.character_id = p_character_id
     group by e.key
   ) s;
+
+  -- Giáp Hoàng Gia: +x% ATK/DEF gốc cho mỗi món đang mặc
+  if v ? 'equip_bonus' then
+    select v
+           || jsonb_build_object(
+                'atk_pct', coalesce((v->>'atk_pct')::numeric, 0) + (v->>'equip_bonus')::numeric * count(*),
+                'def_pct', coalesce((v->>'def_pct')::numeric, 0) + (v->>'equip_bonus')::numeric * count(*))
+      into v
+    from inventory inv where inv.character_id = p_character_id and inv.equipped;
+  end if;
   return v;
 end;
 $$;
@@ -836,7 +846,8 @@ create or replace function public.simulate_fight(
   p_mods jsonb default '{}',      -- tổng thiên phú (get_talent_totals)
   p_level_gap int default 0       -- cấp quái − cấp nhân vật (> 0: đánh vượt cấp)
 )
-returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb)
+returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb,
+              out_revived boolean)
 language plpgsql
 volatile
 as $$
@@ -865,6 +876,21 @@ declare
   v_thorns_on boolean := 'thorns' = any(p_effects);
   -- Đánh quái cao cấp hơn: −2% sát thương mỗi cấp chênh, thấp nhất còn 30%
   v_gap_mult numeric := greatest(0.3, 1 - greatest(0, p_level_gap) * 0.02);
+  -- Ô thiên phú lấy cảm hứng từ DautoRPG
+  v_rage numeric := coalesce((p_mods->>'rage')::numeric, 0);              -- Cuồng Huyết
+  v_guard_step numeric := coalesce((p_mods->>'guard_stack')::numeric, 0); -- Trụ Cột
+  v_guard_hits int := 0;
+  v_prestige numeric := coalesce((p_mods->>'prestige')::numeric, 0);      -- Phong Hầu
+  v_parry numeric := least(0.5, coalesce((p_mods->>'parry')::numeric, 0)); -- Phản Kích
+  v_parry_mult numeric := coalesce((p_mods->>'parry_mult')::numeric, 1.5);
+  v_echo numeric := least(0.5, coalesce((p_mods->>'echo')::numeric, 0));  -- Dư Âm
+  v_echo_pct numeric := coalesce((p_mods->>'echo_pct')::numeric, 0.6);
+  v_pierce numeric := least(1, coalesce((p_mods->>'pierce')::numeric, 0)); -- Xuyên Giáp
+  v_crit_pierce boolean := coalesce((p_mods->>'crit_pierce')::numeric, 0) > 0; -- Mắt Tử Thần
+  v_revive numeric := coalesce((p_mods->>'revive')::numeric, 0);          -- Giả Chết (caller bỏ key khi đã dùng)
+  v_revived boolean := false;
+  v_atk_now numeric; v_def_now numeric; v_stack numeric;
+  v_parried boolean; v_counter int; v_echo_dmg int;
 begin
   while v_char_hp > 0 and v_enemy_hp > 0 and v_turn < 30 loop
     v_turn := v_turn + 1;
@@ -875,18 +901,26 @@ begin
       v_skill_name := p_a2_name; v_skill_power := p_a2_power;
     end if;
 
+    -- Phong Hầu: +x% ATK/DEF mỗi lượt đã qua (tối đa 10); Cuồng Huyết: ATK tăng dần khi HP
+    -- tụt từ 100% xuống 40%
+    v_stack := least(10, v_turn - 1) * v_prestige;
+    v_atk_now := p_char_atk * (1 + v_stack
+      + v_rage * least(1, greatest(0, (1 - v_char_hp::numeric / greatest(1, p_max_hp)) / 0.6)));
+    v_def_now := p_char_def * (1 + v_stack);
+
     -- Đòn Kép: đánh thêm 1 đòn trong lượt
     v_hits := case when random() < v_double_chance then 2 else 1 end;
 
     for v_hit in 1..v_hits loop
       exit when v_enemy_hp <= 0;
 
-      v_base_dmg := greatest(1, (p_char_atk * v_skill_power - p_enemy_def) * v_gap_mult);
+      v_is_crit := random() < p_crit;
+      v_base_dmg := greatest(1, (v_atk_now * v_skill_power
+        - case when v_is_crit and v_crit_pierce then 0 else p_enemy_def * (1 - v_pierce) end) * v_gap_mult);
       v_opening := v_opening_mult > 1 and v_turn = 1 and v_hit = 1;
       if v_opening then
         v_base_dmg := v_base_dmg * v_opening_mult;   -- Khai Cuộc
       end if;
-      v_is_crit := random() < p_crit;
       v_dmg := round(v_base_dmg * (case when v_is_crit then v_crit_mult else 1 end));
       v_enemy_hp := greatest(0, v_enemy_hp - v_dmg);
 
@@ -905,15 +939,44 @@ begin
       end if;
     end loop;
 
+    -- Dư Âm: cơ hội đánh thêm 1 đòn yếu cuối lượt
+    if v_echo > 0 and v_enemy_hp > 0 and random() < v_echo then
+      v_echo_dmg := round(greatest(1, (v_atk_now * v_echo_pct - p_enemy_def * (1 - v_pierce)) * v_gap_mult));
+      v_enemy_hp := greatest(0, v_enemy_hp - v_echo_dmg);
+      if p_with_log then
+        v_log := v_log || jsonb_build_object(
+          'turn', v_turn, 'actor', 'character', 'skill', 'Dư Âm',
+          'damage', v_echo_dmg, 'crit', false, 'enemy_hp_left', v_enemy_hp, 'echo', true
+        );
+      end if;
+    end if;
+
     exit when v_enemy_hp <= 0;
+
+    -- Phản Kích: đỡ trọn đòn quái và đánh trả
+    v_parried := v_parry > 0 and random() < v_parry;
+    if v_parried then
+      v_counter := round(greatest(1, (v_atk_now * v_parry_mult - p_enemy_def) * v_gap_mult));
+      v_enemy_hp := greatest(0, v_enemy_hp - v_counter);
+      if p_with_log then
+        v_log := v_log || jsonb_build_object(
+          'turn', v_turn, 'actor', 'enemy', 'enemy_name', p_enemy_name,
+          'damage', 0, 'character_hp_left', v_char_hp, 'parry', v_counter, 'enemy_hp_left', v_enemy_hp
+        );
+      end if;
+      continue;
+    end if;
 
     -- DEF trừ thẳng nhưng quái luôn gây ít nhất 15% ATK của nó — trước đây sàn là 1,
     -- DEF nhân vật (cấp + VIT + đồ) vượt ATK quái nên quái gần như không gây sát thương
-    v_enemy_dmg := greatest(1, p_enemy_atk - p_char_def, p_enemy_atk * 0.15)
-                   * p_damage_multiplier * (1 - p_dmg_reduction) * v_guardian;
+    -- Trụ Cột: mỗi lần trúng đòn trước đó +x% giảm sát thương (tối đa 3), chung trần 60%
+    v_enemy_dmg := greatest(1, p_enemy_atk - v_def_now, p_enemy_atk * 0.15)
+                   * p_damage_multiplier
+                   * (1 - least(0.6, p_dmg_reduction + least(3, v_guard_hits) * v_guard_step)) * v_guardian;
     v_enemy_hit := round(v_enemy_dmg);
     v_char_hp := greatest(0, v_char_hp - v_enemy_hit);
     v_dmg_taken := v_dmg_taken + v_enemy_hit;
+    v_guard_hits := v_guard_hits + 1;
 
     -- Phản Đòn: 20% sát thương nhận vào dội lại quái
     v_thorns := case when v_thorns_on then round(v_enemy_hit * 0.2) else 0 end;
@@ -927,6 +990,18 @@ begin
         'damage', v_enemy_hit, 'character_hp_left', v_char_hp,
         'thorns', v_thorns, 'enemy_hp_left', v_enemy_hp
       );
+    end if;
+
+    -- Giả Chết: đòn chí tử đầu tiên để lại x% HP
+    if v_char_hp <= 0 and v_revive > 0 and not v_revived then
+      v_revived := true;
+      v_char_hp := greatest(1, round(p_max_hp * v_revive));
+      if p_with_log then
+        v_log := v_log || jsonb_build_object(
+          'turn', v_turn, 'actor', 'system', 'revive', true,
+          'message', 'Giả Chết! Gượng dậy với ' || v_char_hp || ' HP'
+        );
+      end if;
     end if;
   end loop;
 
@@ -944,7 +1019,7 @@ begin
     end if;
   end if;
 
-  return query select v_win, v_timed_out, v_char_hp, v_dmg_taken, v_log;
+  return query select v_win, v_timed_out, v_char_hp, v_dmg_taken, v_log, v_revived;
 end;
 $$;
 -- ============================================================================
@@ -2199,6 +2274,7 @@ declare
   v_drops jsonb;
   v_was_full_ap boolean;
   v_leveled_up boolean := false; v_new_level int;
+  v_mods jsonb; v_revived boolean;
 begin
   select user_id into v_owner_user_id from characters where id = p_character_id;
 
@@ -2242,6 +2318,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
+  v_mods := get_talent_totals(p_character_id);
 
   select exists (select 1 from zone_enemies ze where ze.zone_id = p_zone_id and ze.is_boss)
     into v_has_boss;
@@ -2265,18 +2342,21 @@ begin
     select exp_multiplier, damage_multiplier into v_exp_multiplier, v_damage_multiplier
     from calculate_combat_scaling(v_level, v_enemy.level);
 
-    select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log
-      into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log
+    select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log, f.out_revived
+      into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log, v_revived
     from simulate_fight(
       v_char_atk, v_char_def, v_hp, v_max_hp,
       v_crit_chance, v_lifesteal, v_dmg_reduction,
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
       v_enemy.name, v_enemy.hp, v_enemy.atk, v_enemy.def,
-      v_damage_multiplier, true, v_effects, get_talent_totals(p_character_id),
+      v_damage_multiplier, true, v_effects, v_mods,
       v_enemy.level - v_level
     ) f;
 
     -- Chỉ giữ log từng đòn của trận cuối (nút "Xem trận cuối" trên web)
+    -- Giả Chết chỉ 1 lần mỗi chuyến
+    if v_revived then v_mods := v_mods - 'revive'; end if;
+
     v_last_fight := jsonb_build_object(
       'turn', v_turn, 'enemy', v_enemy.name, 'level', v_enemy.level, 'boss', v_is_boss, 'log', v_fight_log
     );
@@ -3382,6 +3462,7 @@ declare
   v_exp_total int := 0; v_gold_total int := 0; v_kills int := 0; v_bosses int := 0; v_cleared_count int := 0;
   v_was_full_ap boolean;
   v_leveled_up boolean := false; v_new_level int;
+  v_mods jsonb; v_revived boolean;
 begin
   select c.user_id into v_owner_user_id from characters c where c.id = p_character_id;
   if not found then raise exception 'Không tìm thấy nhân vật'; end if;
@@ -3418,6 +3499,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
+  v_mods := get_talent_totals(p_character_id);
 
   v_ap := v_current_ap;
   v_was_full_ap := (v_current_ap >= v_max_ap);
@@ -3436,16 +3518,19 @@ begin
       select sc.exp_multiplier, sc.damage_multiplier into v_exp_mult, v_dmg_mult
       from calculate_combat_scaling(v_level, v_enemy.out_level) sc;
 
-      select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log
-        into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log
+      select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log, f.out_revived
+        into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log, v_revived
       from simulate_fight(
         v_char_atk, v_char_def, v_hp, v_max_hp,
         v_crit_chance, v_lifesteal, v_dmg_reduction,
         v_a1_name, v_a1_power, v_a2_name, v_a2_power,
         v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
-        v_dmg_mult, true, v_effects, get_talent_totals(p_character_id),
+        v_dmg_mult, true, v_effects, v_mods,
         v_enemy.out_level - v_level
       ) f;
+
+      -- Giả Chết chỉ 1 lần mỗi lần leo
+      if v_revived then v_mods := v_mods - 'revive'; end if;
 
       v_last_fight := jsonb_build_object('floor', v_floor, 'enemy', v_enemy.out_name, 'log', v_fight_log);
       v_enemies := v_enemies || jsonb_build_object(
@@ -3918,22 +4003,22 @@ insert into talent_nodes (key, name, icon, branch, kind, cost, x, y, effects, de
   ('origin', 'Khởi Nguyên', '✦', 'origin', 'start', 0, 0, 0, '{}'::jsonb, 'Điểm xuất phát'),
   ('hp_1', 'Sinh Lực', '❤️', 'hp', 'small', 1, 0.0, -17.0, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
   ('hp_2', 'Sinh Lực II', '❤️', 'hp', 'small', 1, 0.0, -34.0, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
-  ('hp_n', 'Sinh Lực Dồi Dào', '❤️', 'hp', 'notable', 2, 0.0, -51.0, '{"hp_pct": 0.08, "def_pct": 0.03}'::jsonb, '+8% HP, +3% DEF'),
+  ('hp_n', 'Giáp Hoàng Gia', '❤️', 'hp', 'notable', 2, 0.0, -51.0, '{"hp_pct": 0.05, "equip_bonus": 0.01}'::jsonb, '+5% HP; +1% ATK và DEF gốc cho mỗi món đang mặc'),
   ('hp_side', 'Da Thịt Rắn Chắc', '❤️', 'hp', 'small', 1, 19.8, -54.3, '{"hp_pct": 0.05}'::jsonb, '+5% HP'),
   ('hp_3', 'Sinh Lực III', '❤️', 'hp', 'small', 1, -7.1, -67.6, '{"hp_pct": 0.04}'::jsonb, '+4% HP tối đa'),
-  ('hp_k', 'Thành Trì Sống', '❤️', 'hp', 'keystone', 2, 0.0, -86.7, '{"hp_pct": 0.25, "atk_pct": -0.1}'::jsonb, '+25% HP tối đa, −10% ATK'),
+  ('hp_k', 'Trụ Cột', '❤️', 'hp', 'keystone', 2, 0.0, -86.7, '{"hp_pct": 0.10, "guard_stack": 0.05}'::jsonb, '+10% HP; mỗi lần trúng đòn +5% giảm sát thương (tối đa 3 lần mỗi trận)'),
   ('atk_1', 'Sức Mạnh', '⚔️', 'atk', 'small', 1, 14.7, -8.5, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
   ('atk_2', 'Sức Mạnh II', '⚔️', 'atk', 'small', 1, 29.4, -17.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
   ('atk_n', 'Khát Chiến', '⚔️', 'atk', 'notable', 2, 44.2, -25.5, '{"atk_pct": 0.06, "crit": 0.02}'::jsonb, '+6% ATK, +2% chí mạng'),
   ('atk_side', 'Đồ Tể', '⚔️', 'atk', 'small', 1, 56.9, -10.0, '{"atk_pct": 0.04}'::jsonb, '+4% ATK'),
   ('atk_3', 'Sức Mạnh III', '⚔️', 'atk', 'small', 1, 55.0, -40.0, '{"atk_pct": 0.03}'::jsonb, '+3% ATK'),
-  ('atk_k', 'Cuồng Nộ Vô Độ', '⚔️', 'atk', 'keystone', 2, 75.1, -43.4, '{"atk_pct": 0.3, "def_pct": -0.2}'::jsonb, '+30% ATK, −20% DEF'),
+  ('atk_k', 'Cuồng Huyết', '⚔️', 'atk', 'keystone', 2, 75.1, -43.4, '{"rage": 0.40, "def_pct": -0.15}'::jsonb, 'ATK tăng theo máu đã mất, tới +40% khi HP ≤ 40%; −15% DEF'),
   ('crit_1', 'Nhãn Lực', '🎯', 'crit', 'small', 1, 14.7, 8.5, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
   ('crit_2', 'Nhãn Lực II', '🎯', 'crit', 'small', 1, 29.4, 17.0, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
-  ('crit_n', 'Điểm Yếu', '🎯', 'crit', 'notable', 2, 44.2, 25.5, '{"crit": 0.03, "atk_pct": 0.02}'::jsonb, '+3% chí mạng, +2% ATK'),
+  ('crit_n', 'Xuyên Giáp', '🎯', 'crit', 'notable', 2, 44.2, 25.5, '{"pierce": 0.30, "crit": 0.02}'::jsonb, 'Bỏ qua 30% DEF quái, +2% chí mạng'),
   ('crit_side', 'Tâm Nhãn', '🎯', 'crit', 'small', 1, 37.2, 44.3, '{"crit": 0.02}'::jsonb, '+2% chí mạng'),
   ('crit_3', 'Nhãn Lực III', '🎯', 'crit', 'small', 1, 62.1, 27.7, '{"crit": 0.015}'::jsonb, '+1.5% chí mạng'),
-  ('crit_k', 'Mắt Tử Thần', '🎯', 'crit', 'keystone', 2, 75.1, 43.3, '{"crit_mult": 2.2, "hp_pct": -0.1}'::jsonb, 'Chí mạng gây ×2.2 (thay ×1.5), −10% HP'),
+  ('crit_k', 'Mắt Tử Thần', '🎯', 'crit', 'keystone', 2, 75.1, 43.3, '{"crit_mult": 2.2, "crit_pierce": 1, "hp_pct": -0.1}'::jsonb, 'Chí mạng gây ×2.2 (thay ×1.5) và xuyên toàn bộ DEF; −10% HP'),
   ('ls_1', 'Huyết Mạch', '🩸', 'ls', 'small', 1, 0.0, 17.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
   ('ls_2', 'Huyết Mạch II', '🩸', 'ls', 'small', 1, 0.0, 34.0, '{"lifesteal": 0.01}'::jsonb, '+1% hút máu'),
   ('ls_n', 'Hiến Tế Huyết Ma', '🩸', 'ls', 'notable', 2, 0.0, 51.0, '{"lifesteal": 0.02, "hp_pct": 0.03}'::jsonb, '+2% hút máu, +3% HP'),
@@ -3943,15 +4028,15 @@ insert into talent_nodes (key, name, icon, branch, kind, cost, x, y, effects, de
   ('spd_1', 'Nhanh Nhẹn', '⚡', 'spd', 'small', 1, -14.7, 8.5, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
   ('spd_2', 'Nhanh Nhẹn II', '⚡', 'spd', 'small', 1, -29.4, 17.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
   ('spd_n', 'Khai Cuộc Thần Tốc', '⚡', 'spd', 'notable', 2, -44.2, 25.5, '{"opening": 1.5, "double": 0.02}'::jsonb, 'Đòn đầu mỗi trận ×1.5, +2% Đòn Kép'),
-  ('spd_side', 'Lướt Gió', '⚡', 'spd', 'small', 1, -56.9, 10.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
+  ('spd_side', 'Dư Âm', '⚡', 'spd', 'small', 1, -56.9, 10.0, '{"echo": 0.15, "echo_pct": 0.6}'::jsonb, '15% mỗi lượt đánh thêm 1 đòn 60% ATK'),
   ('spd_3', 'Nhanh Nhẹn III', '⚡', 'spd', 'small', 1, -55.0, 40.0, '{"double": 0.02}'::jsonb, '+2% Đòn Kép'),
-  ('spd_k', 'Lưỡi Dao Thủy Tinh', '⚡', 'spd', 'keystone', 2, -75.1, 43.4, '{"double": 0.12, "opening": 2.0, "hp_pct": -0.15}'::jsonb, '+12% Đòn Kép, đòn đầu ×2, −15% HP'),
+  ('spd_k', 'Giả Chết', '⚡', 'spd', 'keystone', 2, -75.1, 43.4, '{"revive": 0.30, "double": 0.08, "opening": 2.0, "hp_pct": -0.10}'::jsonb, '1 lần mỗi chuyến khám phá / lần leo tháp: đòn chí tử để lại 30% HP; đòn đầu ×2, +8% Đòn Kép; −10% HP'),
   ('def_1', 'Giáp Trụ', '🛡️', 'def', 'small', 1, -14.7, -8.5, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
   ('def_2', 'Giáp Trụ II', '🛡️', 'def', 'small', 1, -29.4, -17.0, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
-  ('def_n', 'Lũy Thép', '🛡️', 'def', 'notable', 2, -44.2, -25.5, '{"def_pct": 0.08, "dmg_red": 0.03}'::jsonb, '+8% DEF, giảm 3% sát thương nhận'),
+  ('def_n', 'Phong Hầu', '🛡️', 'def', 'notable', 2, -44.2, -25.5, '{"prestige": 0.02, "def_pct": 0.03}'::jsonb, 'Mỗi lượt trong trận +2% ATK và DEF (tối đa +20%); +3% DEF'),
   ('def_side', 'Bất Khả Xâm', '🛡️', 'def', 'small', 1, -37.2, -44.3, '{"def_pct": 0.05}'::jsonb, '+5% DEF'),
   ('def_3', 'Giáp Trụ III', '🛡️', 'def', 'small', 1, -62.1, -27.7, '{"def_pct": 0.04}'::jsonb, '+4% DEF'),
-  ('def_k', 'Pháo Đài Bất Động', '🛡️', 'def', 'keystone', 2, -75.1, -43.4, '{"dmg_red": 0.15, "atk_pct": -0.15}'::jsonb, 'Giảm 15% sát thương nhận, −15% ATK'),
+  ('def_k', 'Phản Kích', '🛡️', 'def', 'keystone', 2, -75.1, -43.4, '{"parry": 0.20, "parry_mult": 1.5, "atk_pct": -0.10}'::jsonb, '20% đỡ trọn đòn quái và phản 150% ATK; −10% ATK'),
   ('bridge_hp_atk', 'Chiến Binh Bền Bỉ', '💠', 'bridge', 'small', 1, 19.5, -33.9, '{"hp_pct": 0.02, "atk_pct": 0.02}'::jsonb, '+2% HP, +2% ATK'),
   ('bridge_atk_crit', 'Sát Khí', '💠', 'bridge', 'small', 1, 39.1, -0.0, '{"atk_pct": 0.02, "crit": 0.01}'::jsonb, '+2% ATK, +1% chí mạng'),
   ('bridge_crit_ls', 'Vết Cắt Sâu', '💠', 'bridge', 'small', 1, 19.5, 33.9, '{"crit": 0.01, "lifesteal": 0.005}'::jsonb, '+1% chí mạng, +0.5% hút máu'),

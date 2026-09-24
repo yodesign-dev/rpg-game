@@ -40,6 +40,15 @@ const EFFECT_LABEL: Record<string, (v: number) => string> = {
   crit_mult: (v) => `chí mạng ×${v}`,
   opening: (v) => `đòn đầu ×${v}`,
   low_hp_ls: (v) => `hút máu ×${v} khi HP < 30%`,
+  equip_bonus: (v) => `+${Math.round(v * 100)}% ATK/DEF gốc mỗi món đang mặc`,
+  guard_stack: (v) => `trúng đòn +${Math.round(v * 100)}% giảm ST (tối đa 3)`,
+  rage: (v) => `ATK tới +${Math.round(v * 100)}% khi mất máu`,
+  pierce: (v) => `xuyên ${Math.round(v * 100)}% DEF`,
+  crit_pierce: () => 'chí mạng xuyên toàn bộ DEF',
+  echo: (v) => `${Math.round(v * 100)}% Dư Âm`,
+  revive: (v) => `Giả Chết: sống lại ${Math.round(v * 100)}% HP`,
+  prestige: (v) => `+${Math.round(v * 100)}% ATK/DEF mỗi lượt`,
+  parry: (v) => `${Math.round(v * 100)}% Phản Kích`,
 }
 
 export default function TalentTree({

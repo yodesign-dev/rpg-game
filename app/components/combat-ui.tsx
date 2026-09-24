@@ -25,6 +25,9 @@ export type LastFight = {
     double?: boolean
     opening?: boolean
     thorns?: number
+    echo?: boolean
+    parry?: number
+    revive?: boolean
   }[]
 }
 
@@ -53,11 +56,16 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
         <p key={i} className="text-xs leading-relaxed">
           {e.actor === 'character' ? (
             <span className="text-[#c9c4d4]">
-              <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : '⚔️'}{' '}
+              <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : e.echo ? '✨' : '⚔️'}{' '}
               {e.opening && <span className="text-[#f0c060]">Khai Cuộc! </span>}
               {e.skill} gây{' '}
               <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
               {e.crit && ' (chí mạng!)'} · {fight.enemy} còn {e.enemy_hp_left} HP
+            </span>
+          ) : e.actor === 'enemy' && e.parry ? (
+            <span className="text-[#8fe0b0]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> 🛡️ Phản Kích! Đỡ đòn {e.enemy_name}, phản {e.parry} ·{' '}
+              {fight.enemy} còn {e.enemy_hp_left} HP
             </span>
           ) : e.actor === 'enemy' ? (
             <span className="text-[#e09595]">
