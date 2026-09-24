@@ -351,8 +351,8 @@ immutable
 as $$
   select
     -- Mỗi cấp quái cao hơn nhân vật: +15% EXP. Mỗi cấp thấp hơn: -15% EXP.
-    -- Chặn trong khoảng [0.2x, 3.0x] để không rơi về 0 hoặc vọt quá vô lý.
-    greatest(0.2, least(3.0, 1 + (p_enemy_level - p_character_level) * 0.15)) as exp_multiplier,
+    -- Chặn trong khoảng [0.2x, 1.5x] — trần cũ 3.0x thưởng quá lớn cho việc vượt cấp.
+    greatest(0.2, least(1.5, 1 + (p_enemy_level - p_character_level) * 0.15)) as exp_multiplier,
     -- Mỗi cấp quái cao hơn: +12% sát thương gây ra. Thấp hơn: -12%.
     -- Chặn trong khoảng [0.5x, 2.5x].
     greatest(0.5, least(2.5, 1 + (p_enemy_level - p_character_level) * 0.12)) as damage_multiplier,
@@ -833,7 +833,8 @@ create or replace function public.simulate_fight(
   p_enemy_name text, p_enemy_hp int, p_enemy_atk int, p_enemy_def int,
   p_damage_multiplier numeric, p_with_log boolean,
   p_effects text[] default '{}',
-  p_mods jsonb default '{}'       -- tổng thiên phú (get_talent_totals)
+  p_mods jsonb default '{}',      -- tổng thiên phú (get_talent_totals)
+  p_level_gap int default 0       -- cấp quái − cấp nhân vật (> 0: đánh vượt cấp)
 )
 returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb)
 language plpgsql
@@ -862,6 +863,8 @@ declare
   v_opening boolean;
   v_guardian numeric := case when 'guardian' = any(p_effects) then 0.88 else 1 end;
   v_thorns_on boolean := 'thorns' = any(p_effects);
+  -- Đánh quái cao cấp hơn: −2% sát thương mỗi cấp chênh, thấp nhất còn 30%
+  v_gap_mult numeric := greatest(0.3, 1 - greatest(0, p_level_gap) * 0.02);
 begin
   while v_char_hp > 0 and v_enemy_hp > 0 and v_turn < 30 loop
     v_turn := v_turn + 1;
@@ -878,7 +881,7 @@ begin
     for v_hit in 1..v_hits loop
       exit when v_enemy_hp <= 0;
 
-      v_base_dmg := greatest(1, p_char_atk * v_skill_power - p_enemy_def);
+      v_base_dmg := greatest(1, (p_char_atk * v_skill_power - p_enemy_def) * v_gap_mult);
       v_opening := v_opening_mult > 1 and v_turn = 1 and v_hit = 1;
       if v_opening then
         v_base_dmg := v_base_dmg * v_opening_mult;   -- Khai Cuộc
@@ -904,7 +907,10 @@ begin
 
     exit when v_enemy_hp <= 0;
 
-    v_enemy_dmg := greatest(1, p_enemy_atk - p_char_def) * p_damage_multiplier * (1 - p_dmg_reduction) * v_guardian;
+    -- DEF trừ thẳng nhưng quái luôn gây ít nhất 15% ATK của nó — trước đây sàn là 1,
+    -- DEF nhân vật (cấp + VIT + đồ) vượt ATK quái nên quái gần như không gây sát thương
+    v_enemy_dmg := greatest(1, p_enemy_atk - p_char_def, p_enemy_atk * 0.15)
+                   * p_damage_multiplier * (1 - p_dmg_reduction) * v_guardian;
     v_enemy_hit := round(v_enemy_dmg);
     v_char_hp := greatest(0, v_char_hp - v_enemy_hit);
     v_dmg_taken := v_dmg_taken + v_enemy_hit;
@@ -2266,7 +2272,8 @@ begin
       v_crit_chance, v_lifesteal, v_dmg_reduction,
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
       v_enemy.name, v_enemy.hp, v_enemy.atk, v_enemy.def,
-      v_damage_multiplier, true, v_effects, get_talent_totals(p_character_id)
+      v_damage_multiplier, true, v_effects, get_talent_totals(p_character_id),
+      v_enemy.level - v_level
     ) f;
 
     -- Chỉ giữ log từng đòn của trận cuối (nút "Xem trận cuối" trên web)
@@ -3436,7 +3443,8 @@ begin
         v_crit_chance, v_lifesteal, v_dmg_reduction,
         v_a1_name, v_a1_power, v_a2_name, v_a2_power,
         v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
-        v_dmg_mult, true, v_effects, get_talent_totals(p_character_id)
+        v_dmg_mult, true, v_effects, get_talent_totals(p_character_id),
+        v_enemy.out_level - v_level
       ) f;
 
       v_last_fight := jsonb_build_object('floor', v_floor, 'enemy', v_enemy.out_name, 'log', v_fight_log);
