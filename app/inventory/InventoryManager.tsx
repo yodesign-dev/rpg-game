@@ -54,6 +54,14 @@ function sellPriceOf(row: InventoryRow) {
 }
 
 // Điểm 1 món — cùng trọng số với inventory_item_score / character_power ở server
+// Công dụng vật phẩm tiêu hao: cuộn/bùa (chờ chuyến kế tiếp), bình AP, bình máu theo % HP
+function consumableLine(it: { restore_ap: number; heal_amount: number; heal_pct?: number; buff_key?: string | null }) {
+  if (it.buff_key) return 'Dùng trước khi đi — hiệu lực cho chuyến kế tiếp'
+  if (it.restore_ap > 0) return `Hồi ${it.restore_ap} AP`
+  if (it.heal_pct) return `Hồi ${Math.round(it.heal_pct * 100)}% HP · tự uống khi khám phá`
+  return `Hồi ${it.heal_amount} HP`
+}
+
 // Dòng tiện ích (rolled_extra): nhãn + trọng số điểm — khớp inventory_item_score
 const EXTRA_AFFIX: Record<string, { label: (v: number) => string; weight: number }> = {
   pierce: { label: (v) => `Xuyên ${(v * 100).toFixed(1)}% DEF`, weight: 150 },
@@ -165,6 +173,8 @@ type Item = {
   bonus_def: number
   bonus_hp: number
   heal_amount: number
+  heal_pct?: number
+  buff_key?: string | null
   restore_ap: number
   sell_price: number | null
   description: string | null
@@ -298,6 +308,7 @@ export default function InventoryManager({
     if (res) {
       setLocalHp(res.new_current_hp)
       setLocalAp(res.new_current_ap)
+      if (row.items.buff_key) setAutoMsg(`${row.items.name} đã sẵn sàng — hiệu lực cho chuyến khám phá / leo tháp kế tiếp.`)
       setRows((prev) =>
         res.new_quantity <= 0
           ? prev.filter((r) => r.id !== row.id)
@@ -676,7 +687,7 @@ export default function InventoryManager({
   // Dòng chỉ số gọn cho thẻ lưới: "ATK +80 · Chí mạng +6.6% · Xuyên 12% DEF"
   function statLine(row: InventoryRow) {
     const it = row.items
-    if (it.type === 'consumable') return [it.restore_ap > 0 ? `Hồi ${it.restore_ap} AP` : `Hồi ${it.heal_amount} HP`]
+    if (it.type === 'consumable') return [consumableLine(it)]
     if (it.type === 'material') return [it.sell_price != null ? `Bán ${it.sell_price} vàng` : 'Nguyên liệu']
     const parts: string[] = []
     const atk = it.bonus_atk + row.rolled_atk
@@ -836,8 +847,7 @@ export default function InventoryManager({
                 ]
                   .filter(Boolean)
                   .join(' · ')}
-              {item.type === 'consumable' &&
-                (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
+              {item.type === 'consumable' && consumableLine(item)}
               {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
             </p>
             {hasAffix && (
@@ -950,7 +960,7 @@ export default function InventoryManager({
 
           {item.type === 'consumable' && (() => {
             const isApPotion = item.restore_ap > 0
-            const isFull = isApPotion ? localAp >= maxAp : localHp >= totalMaxHp
+            const isFull = item.buff_key ? false : isApPotion ? localAp >= maxAp : localHp >= totalMaxHp
             return (
               <button
                 onClick={() => useItem(row)}

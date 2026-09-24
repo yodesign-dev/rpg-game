@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
 import EnemyFace from '../components/EnemyFace'
+import SupplyResult from '../components/SupplyResult'
 
 const AP_PER_FLOOR = 5
 const PREVIEW_FLOORS = 10
@@ -28,6 +29,9 @@ type ClimbResult = {
   stop: 'died' | 'fled' | 'no_ap' | 'max_floors' | 'top'
   tower_best: number
   exp_gained: number
+  potions_used?: number
+  guard_used?: boolean
+  buffs?: { exp?: boolean; luck?: boolean }
   gold_gained: number
   leveled_up: boolean
   new_level: number
@@ -300,6 +304,7 @@ function ClimbReport({ result }: { result: ClimbResult }) {
         <p className="text-[#e5e1ed]">
           🗼 Tầng cao nhất: {result.tower_best} · ❤️ HP còn {result.hp_left}/{result.max_hp} · ⚡ AP còn {result.ap_left}
         </p>
+        <SupplyResult potionsUsed={result.potions_used} guardUsed={result.guard_used} buffs={result.buffs} />
         {result.leveled_up && <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}!</p>}
         {drops.length > 0 && (
           <p className="text-[#a29fb3]">🎁 Nhặt được {drops.reduce((n, d) => n + d.qty, 0)} vật phẩm — xem trong Túi Đồ</p>

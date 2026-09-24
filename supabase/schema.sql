@@ -1564,6 +1564,7 @@ declare
   v_gold int;
   v_buy_price int;
   v_item_type text;
+  v_level int; v_per_level int; v_limit int; v_listed boolean; v_bought int;
   v_total_cost int;
   v_inventory_id uuid;
   v_new_quantity int;
@@ -1581,10 +1582,25 @@ begin
     raise exception 'Không có quyền điều khiển nhân vật này';
   end if;
 
-  select buy_price, type into v_buy_price, v_item_type from items where id = p_item_id;
+  select buy_price, type, price_per_level, daily_limit, shop_listed
+    into v_buy_price, v_item_type, v_per_level, v_limit, v_listed
+  from items where id = p_item_id;
+  select c.level into v_level from characters c where c.id = p_character_id;
 
-  if v_buy_price is null then
+  if v_buy_price is null or not v_listed then
     raise exception 'Vật phẩm này không bán trong chợ';
+  end if;
+
+  -- Giá tăng theo cấp; món có giới hạn ngày thì đếm theo ngày giờ VN
+  v_buy_price := v_buy_price + v_per_level * v_level;
+  if v_limit is not null then
+    select coalesce(sum(sd.qty), 0) into v_bought from shop_daily sd
+    where sd.character_id = p_character_id and sd.item_id = p_item_id and sd.day = vn_today();
+    if v_bought + p_quantity > v_limit then
+      raise exception 'Hôm nay chỉ được mua tối đa % món này (đã mua %)', v_limit, v_bought;
+    end if;
+    insert into shop_daily (character_id, item_id, day, qty) values (p_character_id, p_item_id, vn_today(), p_quantity)
+    on conflict (character_id, item_id, day) do update set qty = shop_daily.qty + excluded.qty;
   end if;
 
   v_total_cost := v_buy_price * p_quantity;
@@ -1700,6 +1716,7 @@ declare
   v_current_hp int; v_current_ap int; v_max_ap int;
   v_max_hp int;
   v_item_id uuid; v_quantity int; v_type text; v_heal_amount int; v_restore_ap int;
+  v_heal_pct numeric; v_buff text;
   v_new_hp int; v_new_ap int; v_new_quantity int;
 begin
   select user_id into v_owner_user_id from characters where id = p_character_id;
@@ -1727,18 +1744,29 @@ begin
     raise exception 'Không tìm thấy vật phẩm trong túi đồ';
   end if;
 
-  select type, heal_amount, restore_ap into v_type, v_heal_amount, v_restore_ap
+  select type, heal_amount, restore_ap, heal_pct, buff_key into v_type, v_heal_amount, v_restore_ap, v_heal_pct, v_buff
   from items where id = v_item_id;
 
+  -- Bình theo % HP: lấy mức lớn hơn giữa số cố định và % HP tối đa
+  v_heal_amount := greatest(coalesce(v_heal_amount, 0), round(v_max_hp * coalesce(v_heal_pct, 0))::int);
+
   if v_type is distinct from 'consumable'
-     or (coalesce(v_heal_amount, 0) <= 0 and coalesce(v_restore_ap, 0) <= 0) then
+     or (v_heal_amount <= 0 and coalesce(v_restore_ap, 0) <= 0 and v_buff is null) then
     raise exception 'Vật phẩm này không thể sử dụng';
+  end if;
+
+  -- Cuộn / bùa: chờ áp vào chuyến khám phá hoặc lần leo tháp kế tiếp
+  if v_buff is not null then
+    if exists (select 1 from character_buffs b where b.character_id = p_character_id and b.buff_key = v_buff) then
+      raise exception 'Đã có một cuộn/bùa loại này đang chờ dùng';
+    end if;
+    insert into character_buffs (character_id, buff_key) values (p_character_id, v_buff);
   end if;
 
   v_new_hp := v_current_hp;
   v_new_ap := v_current_ap;
 
-  if coalesce(v_heal_amount, 0) > 0 then
+  if v_buff is null and v_heal_amount > 0 then
     if v_current_hp >= v_max_hp then
       raise exception 'HP đã đầy';
     end if;
@@ -1982,9 +2010,9 @@ begin
       new.last_ap_update := now();
       new.last_hp_update := now();
       new.created_at := now();
-    elsif (to_jsonb(new) - 'name' - 'auto_allocate_stats' - 'portrait' - 'frame')
+    elsif (to_jsonb(new) - 'name' - 'auto_allocate_stats' - 'portrait' - 'frame' - 'auto_potion')
           is distinct from
-          (to_jsonb(old) - 'name' - 'auto_allocate_stats' - 'portrait' - 'frame') then
+          (to_jsonb(old) - 'name' - 'auto_allocate_stats' - 'portrait' - 'frame' - 'auto_potion') then
       raise exception 'Chỉ được đổi tên, chân dung, khung và chế độ tự cộng điểm; chỉ số nhân vật chỉ thay đổi qua hành động trong game';
     elsif new.frame is distinct from old.frame and new.frame is not null
           and not frame_unlocked(new.frame, new.level, new.tower_best, new.legendary_found, new.boss_kills) then
@@ -2398,6 +2426,9 @@ declare
   v_was_full_ap boolean;
   v_leveled_up boolean := false; v_new_level int;
   v_mods jsonb; v_revived boolean;
+  -- Tiếp tế: bình tự uống (tối đa 3/chuyến) + cuộn / bùa đang chờ
+  v_auto_potion boolean; v_potions_left int := 0; v_potions_used int := 0; v_drink record;
+  v_buff_exp boolean := false; v_buff_luck boolean := false; v_buff_guard boolean := false; v_guard_used boolean := false;
 begin
   select user_id into v_owner_user_id from characters where id = p_character_id;
 
@@ -2414,8 +2445,8 @@ begin
 
   perform regen_character(p_character_id);
 
-  select level, current_hp, current_ap, max_ap
-    into v_level, v_current_hp, v_current_ap, v_max_ap
+  select level, current_hp, current_ap, max_ap, auto_potion
+    into v_level, v_current_hp, v_current_ap, v_max_ap, v_auto_potion
   from characters where id = p_character_id for update;
 
   select gs.max_hp, gs.atk, gs.def, gs.crit_bonus, gs.lifesteal_bonus
@@ -2442,6 +2473,13 @@ begin
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
   v_mods := combat_mods(p_character_id);
+
+  select coalesce(bool_or(b.buff_key = 'exp'), false), coalesce(bool_or(b.buff_key = 'luck'), false),
+         coalesce(bool_or(b.buff_key = 'guard'), false)
+    into v_buff_exp, v_buff_luck, v_buff_guard
+  from character_buffs b where b.character_id = p_character_id;
+  delete from character_buffs b where b.character_id = p_character_id;
+  v_potions_left := case when v_auto_potion then 3 else 0 end;
 
   select exists (select 1 from zone_enemies ze where ze.zone_id = p_zone_id and ze.is_boss)
     into v_has_boss;
@@ -2496,7 +2534,7 @@ begin
           'boss', v_enemy.name, 'where', v_zone.icon || ' ' || v_zone.name, 'source', 'explore'
         ));
       end if;
-      v_fight_exp := round(v_enemy.reward_exp * v_exp_multiplier);
+      v_fight_exp := round(v_enemy.reward_exp * v_exp_multiplier * case when v_buff_exp then 1.25 else 1 end);
       v_fight_gold := round(v_enemy.reward_gold * v_exp_multiplier);
       v_exp_gained := v_exp_gained + v_fight_exp;
       v_gold_gained := v_gold_gained + v_fight_gold;
@@ -2506,7 +2544,7 @@ begin
         from zone_drops zd join items i on i.id = zd.item_id
         where zd.zone_id = p_zone_id and (not zd.boss_only or v_is_boss)
       loop
-        continue when random() >= v_drop.drop_rate;
+        continue when random() >= v_drop.drop_rate * case when v_buff_luck then 1.3 else 1 end;
         v_drop_rarity := grant_drop(p_character_id, v_drop.item_id, v_is_boss);
         v_fight_drops := v_fight_drops || jsonb_build_object('key', v_drop.key, 'rarity', v_drop_rarity);
         -- Gộp theo cặp item|tier (cùng 1 món có thể rơi ra nhiều tier khác nhau)
@@ -2534,8 +2572,28 @@ begin
 
     -- Hết HP: dừng, thưởng chỉ tính các trận đã thắng trước đó
     if not v_win and not v_timed_out then
-      v_died := true;
-      exit;
+      if not v_buff_guard then
+        v_died := true;
+        exit;
+      end if;
+      -- Bùa Hộ Mệnh: đứng dậy với 50% HP, đánh tiếp chuyến
+      v_buff_guard := false;
+      v_guard_used := true;
+      v_hp := greatest(1, round(v_max_hp * 0.5)::int);
+      v_fights := jsonb_set(v_fights, array[(jsonb_array_length(v_fights) - 1)::text, 'guard'], 'true'::jsonb);
+    end if;
+
+    -- Tự uống bình khi HP dưới 35%
+    if v_potions_left > 0 and v_hp < v_max_hp * 0.35 then
+      select d.out_hp, d.out_name into v_drink from drink_best_potion(p_character_id, v_hp, v_max_hp) d;
+      if v_drink.out_name is not null then
+        v_hp := v_drink.out_hp;
+        v_potions_left := v_potions_left - 1;
+        v_potions_used := v_potions_used + 1;
+        v_fights := jsonb_set(v_fights, array[(jsonb_array_length(v_fights) - 1)::text, 'potion'], to_jsonb(v_drink.out_name));
+      else
+        v_potions_left := 0;
+      end if;
     end if;
   end loop;
 
@@ -2591,7 +2649,10 @@ begin
     'ap_left', v_current_ap - v_zone.ap_cost,
     'drops', v_drops,
     'fights', v_fights,
-    'last_fight', v_last_fight
+    'last_fight', v_last_fight,
+    'potions_used', v_potions_used,
+    'guard_used', v_guard_used,
+    'buffs', jsonb_build_object('exp', v_buff_exp, 'luck', v_buff_luck)
   );
 end;
 $$;
@@ -3588,6 +3649,8 @@ declare
   v_was_full_ap boolean;
   v_leveled_up boolean := false; v_new_level int;
   v_mods jsonb; v_revived boolean;
+  v_auto_potion boolean; v_potions_left int := 0; v_potions_used int := 0; v_drink record;
+  v_buff_exp boolean := false; v_buff_luck boolean := false; v_buff_guard boolean := false; v_guard_used boolean := false;
 begin
   select c.user_id into v_owner_user_id from characters c where c.id = p_character_id;
   if not found then raise exception 'Không tìm thấy nhân vật'; end if;
@@ -3597,8 +3660,8 @@ begin
 
   perform regen_character(p_character_id);
 
-  select c.level, c.current_hp, c.current_ap, c.max_ap, c.tower_best
-    into v_level, v_current_hp, v_current_ap, v_max_ap, v_best
+  select c.level, c.current_hp, c.current_ap, c.max_ap, c.tower_best, c.auto_potion
+    into v_level, v_current_hp, v_current_ap, v_max_ap, v_best, v_auto_potion
   from characters c where c.id = p_character_id for update;
 
   if p_start_floor is null or p_start_floor < 1 or p_start_floor > 100
@@ -3626,6 +3689,13 @@ begin
   v_effects := get_character_effects(p_character_id);
   v_mods := combat_mods(p_character_id);
 
+  select coalesce(bool_or(b.buff_key = 'exp'), false), coalesce(bool_or(b.buff_key = 'luck'), false),
+         coalesce(bool_or(b.buff_key = 'guard'), false)
+    into v_buff_exp, v_buff_luck, v_buff_guard
+  from character_buffs b where b.character_id = p_character_id;
+  delete from character_buffs b where b.character_id = p_character_id;
+  v_potions_left := case when v_auto_potion then 3 else 0 end;
+
   v_ap := v_current_ap;
   v_was_full_ap := (v_current_ap >= v_max_ap);
 
@@ -3643,19 +3713,27 @@ begin
       select sc.exp_multiplier, sc.damage_multiplier into v_exp_mult, v_dmg_mult
       from calculate_combat_scaling(v_level, v_enemy.out_level) sc;
 
-      select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log, f.out_revived
-        into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log, v_revived
-      from simulate_fight(
-        v_char_atk, v_char_def, v_hp, v_max_hp,
-        v_crit_chance, v_lifesteal, v_dmg_reduction,
-        v_a1_name, v_a1_power, v_a2_name, v_a2_power,
-        v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
-        v_dmg_mult, true, v_effects, v_mods,
-        v_enemy.out_level - v_level
-      ) f;
+      -- Bùa Hộ Mệnh: gục thì đứng dậy với 50% HP và đánh lại quái này (1 lần mỗi lần leo)
+      loop
+        select f.out_win, f.out_timed_out, f.out_hp_left, f.out_dmg_taken, f.out_log, f.out_revived
+          into v_win, v_timed_out, v_hp, v_dmg_taken, v_fight_log, v_revived
+        from simulate_fight(
+          v_char_atk, v_char_def, v_hp, v_max_hp,
+          v_crit_chance, v_lifesteal, v_dmg_reduction,
+          v_a1_name, v_a1_power, v_a2_name, v_a2_power,
+          v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
+          v_dmg_mult, true, v_effects, v_mods,
+          v_enemy.out_level - v_level
+        ) f;
 
-      -- Giả Chết chỉ 1 lần mỗi lần leo
-      if v_revived then v_mods := v_mods - 'revive'; end if;
+        -- Giả Chết chỉ 1 lần mỗi lần leo
+        if v_revived then v_mods := v_mods - 'revive'; end if;
+
+        exit when v_win or v_timed_out or not v_buff_guard;
+        v_buff_guard := false;
+        v_guard_used := true;
+        v_hp := greatest(1, round(v_max_hp * 0.5)::int);
+      end loop;
 
       v_last_fight := jsonb_build_object('floor', v_floor, 'enemy', v_enemy.out_name, 'log', v_fight_log);
       v_enemies := v_enemies || jsonb_build_object(
@@ -3672,8 +3750,20 @@ begin
 
       v_floor_kills := v_floor_kills + 1;
       if v_enemy.out_kind = 'boss' then v_floor_bosses := v_floor_bosses + 1; end if;
-      v_floor_exp := v_floor_exp + round(v_enemy.out_exp * v_exp_mult);
+      v_floor_exp := v_floor_exp + round(v_enemy.out_exp * v_exp_mult * case when v_buff_exp then 1.25 else 1 end);
       v_floor_gold := v_floor_gold + round(v_enemy.out_gold * v_exp_mult);
+
+      -- Tự uống bình khi HP dưới 35%
+      if v_potions_left > 0 and v_hp < v_max_hp * 0.35 then
+        select d.out_hp, d.out_name into v_drink from drink_best_potion(p_character_id, v_hp, v_max_hp) d;
+        if v_drink.out_name is not null then
+          v_hp := v_drink.out_hp;
+          v_potions_left := v_potions_left - 1;
+          v_potions_used := v_potions_used + 1;
+        else
+          v_potions_left := 0;
+        end if;
+      end if;
     end loop;
 
     -- Quái đã hạ vẫn tính vào thành tích dù tầng trượt; thưởng thì không
@@ -3700,7 +3790,7 @@ begin
     end if;
 
     -- Tầng boss: lần đầu chắc chắn rơi trang bị, qua lại 20%
-    if v_floor % 10 = 0 and (v_first or random() < 0.2) then
+    if v_floor % 10 = 0 and (v_first or random() < case when v_buff_luck then 0.26 else 0.2 end) then
       select i.id, i.rarity into v_equip, v_equip_base from items i
       where i.type in ('weapon', 'armor') and i.buy_price is null
         and i.item_level between v_floor - 12 and v_floor + 3
@@ -3779,7 +3869,10 @@ begin
     'ap_left', v_ap,
     'ap_per_floor', c_ap_per_floor,
     'floors', v_floors,
-    'last_fight', v_last_fight
+    'last_fight', v_last_fight,
+    'potions_used', v_potions_used,
+    'guard_used', v_guard_used,
+    'buffs', jsonb_build_object('exp', v_buff_exp, 'luck', v_buff_luck)
   );
 end;
 $$;
@@ -4653,3 +4746,99 @@ as $$
     else false
   end;
 $$;
+
+-- ============================================================================
+-- CHỢ: TIẾP TẾ CHO CHUYẾN ĐI (bình % HP tự uống, cuộn / bùa, giá theo cấp, giới hạn ngày)
+-- ============================================================================
+
+alter table items add column if not exists heal_pct numeric not null default 0;       -- hồi % HP tối đa
+alter table items add column if not exists price_per_level int not null default 0;    -- giá = buy_price + x × cấp
+alter table items add column if not exists daily_limit int;                          -- null = không giới hạn
+alter table items add column if not exists buff_key text;                            -- exp | luck | guard
+alter table items add column if not exists shop_listed boolean not null default true;
+alter table characters add column if not exists auto_potion boolean not null default true;
+
+-- Cuộn / bùa đã dùng, chờ áp vào chuyến khám phá hoặc lần leo tháp kế tiếp
+create table if not exists character_buffs (
+  character_id uuid not null references characters(id) on delete cascade,
+  buff_key     text not null,
+  created_at   timestamptz not null default now(),
+  primary key (character_id, buff_key)
+);
+alter table character_buffs enable row level security;
+drop policy if exists "own buffs select" on character_buffs;
+create policy "own buffs select" on character_buffs
+  for select using (exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid()));
+grant select on table character_buffs to authenticated;
+
+-- Số lượng đã mua trong ngày (giờ VN) cho món có daily_limit
+create table if not exists shop_daily (
+  character_id uuid not null references characters(id) on delete cascade,
+  item_id      uuid not null references items(id),
+  day          date not null,
+  qty          int not null default 0,
+  primary key (character_id, item_id, day)
+);
+alter table shop_daily enable row level security;
+drop policy if exists "own shop_daily select" on shop_daily;
+create policy "own shop_daily select" on shop_daily
+  for select using (exists (select 1 from characters c where c.id = character_id and c.user_id = auth.uid()));
+grant select on table shop_daily to authenticated;
+
+-- Bình máu hồi theo % HP (không lỗi thời theo cấp), giá nhích theo cấp
+update items i set heal_pct = v.pct, price_per_level = v.ppl, description = v.descr
+from (values
+  ('potion_minor', 0.15, 1, 'Hồi 15% HP tối đa. Tự uống trong khám phá / tháp khi HP dưới 35%.'),
+  ('potion_medium', 0.25, 2, 'Hồi 25% HP tối đa. Tự uống trong khám phá / tháp khi HP dưới 35%.'),
+  ('potion_large', 0.35, 4, 'Hồi 35% HP tối đa. Tự uống trong khám phá / tháp khi HP dưới 35%.'),
+  ('potion_supreme', 0.50, 6, 'Hồi 50% HP tối đa. Tự uống trong khám phá / tháp khi HP dưới 35%.')
+) as v(key, pct, ppl, descr)
+where i.key = v.key;
+
+-- Trang bị thường cấp 1 không còn bán (vô dụng từ cấp 5); đồ đã mua vẫn giữ
+update items set shop_listed = false
+where key in ('iron_helmet', 'traveler_boots', 'ring_ruby', 'guardian_amulet', 'iron_shield');
+
+insert into items (key, name, type, rarity, buy_price, price_per_level, daily_limit, buff_key, sell_price, description, icon) values
+  ('scroll_exp', 'Cuộn Tri Thức', 'consumable', 'epic', 500, 200, 1, 'exp', 0,
+   '+25% EXP cho chuyến khám phá / lần leo tháp kế tiếp. Mua tối đa 1 cuộn mỗi ngày.', 'scroll_exp.png'),
+  ('scroll_luck', 'Cuộn May Mắn', 'consumable', 'rare', 300, 80, 2, 'luck', 0,
+   '+30% tỉ lệ rơi đồ cho chuyến khám phá / lần leo tháp kế tiếp. Mua tối đa 2 cuộn mỗi ngày.', 'scroll_luck.png'),
+  ('charm_guard', 'Bùa Hộ Mệnh', 'consumable', 'epic', 400, 100, 1, 'guard', 0,
+   'Gục ngã trong chuyến kế tiếp thì đứng dậy với 50% HP và đánh tiếp (1 lần). Mua tối đa 1 bùa mỗi ngày.', 'charm_guard.png')
+on conflict (key) do nothing;
+
+-- Uống bình máu mạnh nhất đang có (dùng trong khám phá / tháp). Hết bình → out_name null.
+create or replace function public.drink_best_potion(p_character_id uuid, p_hp int, p_max_hp int)
+returns table(out_hp int, out_name text)
+language plpgsql
+set search_path = 'public'
+as $$
+declare
+  v_row record;
+begin
+  select inv.id as inv_id, inv.quantity as qty, i.name as item_name,
+         greatest(coalesce(i.heal_amount, 0), round(p_max_hp * i.heal_pct)::int) as heal
+    into v_row
+  from inventory inv join items i on i.id = inv.item_id
+  where inv.character_id = p_character_id and i.heal_pct > 0 and inv.quantity > 0
+  order by i.heal_pct desc, inv.acquired_at
+  limit 1
+  for update of inv;
+
+  if v_row.inv_id is null then
+    return query select p_hp, null::text;
+    return;
+  end if;
+
+  if v_row.qty <= 1 then
+    delete from inventory where id = v_row.inv_id;
+  else
+    update inventory set quantity = quantity - 1 where id = v_row.inv_id;
+  end if;
+
+  return query select least(p_max_hp, p_hp + v_row.heal), v_row.item_name;
+end;
+$$;
+
+revoke execute on function public.drink_best_potion(uuid, int, int) from public, anon, authenticated;

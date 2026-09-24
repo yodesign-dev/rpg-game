@@ -4,12 +4,14 @@ import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import GlassPage from '../GlassPage'
 import ExploreManager, { type Zone } from './ExploreManager'
+import SupplyBar from '../components/SupplyBar'
+import { getSupplies } from '@/lib/supplies'
 
 
 export default async function ExplorePage() {
   const { supabase, character } = await getCurrentCharacter()
 
-  const [regen, stats, { data: zonesRaw, error: zonesError }, { data: dropsRaw }] = await Promise.all([
+  const [regen, stats, { data: zonesRaw, error: zonesError }, { data: dropsRaw }, supplies] = await Promise.all([
     applyRegen(supabase, character),
     getCharacterStats(supabase, character.id),
     supabase
@@ -17,6 +19,7 @@ export default async function ExplorePage() {
       .select('id, key, name, icon, description, min_level, max_level, ap_cost, zone_enemies(name, level, is_boss)')
       .order('sort_order'),
     supabase.from('zone_drops').select('zone_id, boss_only, item:items(key, name, icon, rarity)'),
+    getSupplies(supabase, character.id),
   ])
 
   type EnemyRow = { name: string; level: number; is_boss: boolean }
@@ -53,6 +56,13 @@ export default async function ExplorePage() {
           Không tải được danh sách vùng{zonesError ? `: ${zonesError.message}` : ''}.
         </p>
       )}
+
+      <SupplyBar
+        characterId={character.id}
+        autoPotion={character.auto_potion ?? true}
+        potionCount={supplies.potionCount}
+        buffs={supplies.buffs}
+      />
 
       <ExploreManager
         characterId={character.id}

@@ -6,6 +6,7 @@ import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
 import EnemyFace from '../components/EnemyFace'
+import SupplyResult from '../components/SupplyResult'
 
 
 
@@ -32,6 +33,8 @@ type Fight = {
   exp: number
   gold: number
   drops: { key: string; rarity: string }[]
+  potion?: string
+  guard?: boolean
 }
 
 
@@ -41,6 +44,9 @@ type ExploreResult = {
   turns_completed: number
   wins: number
   died: boolean
+  potions_used?: number
+  guard_used?: boolean
+  buffs?: { exp?: boolean; luck?: boolean }
   exp_gained: number
   gold_gained: number
   leveled_up: boolean
@@ -325,6 +331,7 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
           ❤️ HP còn: {result.hp_left}/{result.max_hp}
           <span className="text-[#7d7a8c]"> · hồi 2%/phút</span>
         </p>
+        <SupplyResult potionsUsed={result.potions_used} guardUsed={result.guard_used} buffs={result.buffs} />
         {result.died && <p className="text-[#e09595]">Trận cuối gục ngã nên không có thưởng.</p>}
         {result.leveled_up && (
           <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}! Vào trang nhân vật để cộng điểm chỉ số.</p>
@@ -381,6 +388,8 @@ function TurnRow({
             {f.result === 'flee' ? 'rút lui' : 'gục ngã'}
           </span>
         )}
+        {f.guard && <span className="text-[#c8f5dc]">🛡️ Bùa cứu</span>}
+        {f.potion && <span className="text-[#c8f5dc]">🧪 {f.potion}</span>}
         {f.drops.map((d, i) => (
           <span key={i} className={`flex items-center gap-1 ${RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}`}>
             <ItemIcon icon={dropInfo[d.key]?.icon ?? null} size={14} />+{dropInfo[d.key]?.name ?? d.key}

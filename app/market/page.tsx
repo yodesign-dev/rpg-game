@@ -10,17 +10,24 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   const tab = tabParam === 'merchant' ? 'merchant' : 'shop'
   const { supabase, character } = await getCurrentCharacter()
 
-  const [{ data: items }, { data: history }] = await Promise.all([
-    supabase.from('items').select('*').not('buy_price', 'is', null).order('buy_price', { ascending: true }),
+  // Lượt miễn phí / giới hạn mua reset theo ngày giờ Việt Nam (khớp vn_today() phía DB)
+  const vnToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+  const [{ data: items }, { data: history }, { data: daily }, { data: buffs }] = await Promise.all([
+    supabase
+      .from('items')
+      .select('*')
+      .not('buy_price', 'is', null)
+      .eq('shop_listed', true)
+      .order('buy_price', { ascending: true }),
     supabase
       .from('gacha_log')
       .select('id, tier, rarity, quantity, created_at, item:items(name, icon)')
       .eq('character_id', character.id)
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase.from('shop_daily').select('item_id, qty').eq('character_id', character.id).eq('day', vnToday),
+    supabase.from('character_buffs').select('buff_key').eq('character_id', character.id),
   ])
-  // Lượt miễn phí reset theo ngày giờ Việt Nam (khớp vn_today() phía DB)
-  const vnToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
 
   return (
     <GlassPage title="Chợ" aside={<GoldChip gold={character.gold} />}>
@@ -44,7 +51,14 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
       </div>
 
       {tab === 'shop' ? (
-        <MarketManager characterId={character.id} gold={character.gold} items={items ?? []} />
+        <MarketManager
+          characterId={character.id}
+          gold={character.gold}
+          level={character.level}
+          items={items ?? []}
+          boughtToday={Object.fromEntries((daily ?? []).map((d) => [d.item_id, d.qty]))}
+          pendingBuffs={(buffs ?? []).map((b) => b.buff_key)}
+        />
       ) : (
         <GachaMerchant
           characterId={character.id}

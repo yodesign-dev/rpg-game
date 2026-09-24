@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 
-
 const RARITY_COLOR: Record<string, string> = {
-  common: 'text-[#a29fb3]',
+  common: 'text-[#c9c4d4]',
   rare: 'text-[#8fb4c4]',
   epic: 'text-[#b79bc4]',
   legendary: 'text-[#e0b050]',
@@ -25,29 +24,41 @@ type ShopItem = {
   key: string
   name: string
   type: string
-  hand: string | null
   rarity: string
   heal_amount: number
+  heal_pct: number
   restore_ap: number
-  bonus_atk: number
-  bonus_def: number
-  bonus_hp: number
   buy_price: number | null
+  price_per_level: number
+  daily_limit: number | null
+  buff_key: string | null
   description: string | null
   icon: string | null
+}
+
+// Khớp buy_item: giá = buy_price + price_per_level × cấp
+export function shopPrice(item: ShopItem, level: number) {
+  return (item.buy_price ?? 0) + item.price_per_level * level
 }
 
 export default function MarketManager({
   characterId,
   gold,
+  level,
   items,
+  boughtToday,
+  pendingBuffs,
 }: {
   characterId: string
   gold: number
+  level: number
   items: ShopItem[]
+  boughtToday: Record<string, number>
+  pendingBuffs: string[]
 }) {
   const router = useRouter()
   const [localGold, setLocalGold] = useState(gold)
+  const [bought, setBought] = useState(boughtToday)
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -56,107 +67,97 @@ export default function MarketManager({
     setError(null)
     setNotice(null)
     setPendingItemId(item.id)
-
-    const supabase = createClient()
-    const { data, error: rpcError } = await supabase.rpc('buy_item', {
+    const { data, error: rpcError } = await createClient().rpc('buy_item', {
       p_character_id: characterId,
       p_item_id: item.id,
       p_quantity: 1,
     })
-
     setPendingItemId(null)
-
-    if (rpcError) {
-      setError(rpcError.message)
-      return
-    }
+    if (rpcError) return setError(rpcError.message)
 
     const res = (Array.isArray(data) ? data[0] : data) as { new_gold: number } | undefined
     if (res) {
       setLocalGold(res.new_gold)
-      setNotice(`Đã mua ${item.name}`)
+      setBought((b) => ({ ...b, [item.id]: (b[item.id] ?? 0) + 1 }))
+      setNotice(`Đã mua ${item.name} — vào Túi Đồ để dùng.`)
       router.refresh()
     }
   }
 
   if (items.length === 0) {
-    return (
-      <p className={`${ui.className} text-center text-xs text-[#5c5470]`}>
-        Chợ hiện chưa có gì để bán.
-      </p>
-    )
+    return <p className={`${ui.className} text-center text-xs text-[#7d7a8c]`}>Chợ hiện chưa có gì để bán.</p>
   }
 
+  const sections = [
+    {
+      title: '🧪 TIẾP TẾ',
+      note: 'Bình máu tự uống trong khám phá / tháp khi HP dưới 35% (tối đa 3 bình mỗi chuyến).',
+      rows: items.filter((i) => !i.buff_key),
+    },
+    {
+      title: '📜 CUỘN & BÙA',
+      note: 'Dùng từ Túi Đồ trước khi đi — hiệu lực cho chuyến khám phá hoặc lần leo tháp kế tiếp.',
+      rows: items.filter((i) => i.buff_key),
+    },
+  ].filter((s) => s.rows.length > 0)
+
   return (
-    <div className="space-y-4">
-      {error && (
-        <p className={`${ui.className} text-xs text-[#e09595] text-center`}>{error}</p>
-      )}
-      {notice && (
-        <p className={`${ui.className} text-xs text-[#8fe0b0] text-center`}>{notice}</p>
-      )}
+    <div className={`${ui.className} space-y-6`}>
+      {error && <p className="text-xs text-[#e09595] text-center">{error}</p>}
+      {notice && <p className="text-xs text-[#8fe0b0] text-center">{notice}</p>}
 
-      <div className="space-y-3">
-        {items.map((item) => {
-          const isPending = pendingItemId === item.id
-          const canAfford = item.buy_price !== null && localGold >= item.buy_price
-          const rarityClass = RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common
-
-          return (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4 flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {item.icon && (
-                  <div
-                    className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common}
-                      bg-[#0b0a10] flex items-center justify-center shrink-0`}
-                  >
-                    <img
-                      src={`/items/${item.icon}`}
-                      alt=""
-                      className="w-8 h-8"
-                      style={{ imageRendering: 'pixelated' }}
-                    />
-                  </div>
-                )}
-                <div>
-                  <p className={`font-semibold ${rarityClass}`}>{item.name}</p>
-                  {item.description && (
-                    <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
-                      {item.description}
-                    </p>
+      {sections.map((section) => (
+        <section key={section.title}>
+          <h2 className="text-xs font-semibold tracking-[2px] text-[#a29fb3]">{section.title}</h2>
+          <p className="mb-3 mt-1 text-xs text-[#7d7a8c]">{section.note}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {section.rows.map((item) => {
+              const price = shopPrice(item, level)
+              const left = item.daily_limit == null ? null : Math.max(0, item.daily_limit - (bought[item.id] ?? 0))
+              const waiting = !!item.buff_key && pendingBuffs.includes(item.buff_key)
+              const canBuy = localGold >= price && left !== 0
+              const isPending = pendingItemId === item.id
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4"
+                >
+                  {item.icon && (
+                    <div
+                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border ${
+                        RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common
+                      } bg-[#0b0a10]`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- icon pixel 32-64 px */}
+                      <img src={`/items/${item.icon}`} alt="" className="h-9 w-9 [image-rendering:pixelated]" />
+                    </div>
                   )}
-                  <p className={`${ui.className} text-xs text-[#5c5470] mt-1`}>
-                    {item.type === 'consumable' &&
-                      (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
-                    {item.type === 'weapon' &&
-                      `+${item.bonus_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}`}
-                    {item.type === 'armor' &&
-                      [
-                        item.bonus_atk ? `+${item.bonus_atk} ATK` : null,
-                        item.bonus_def ? `+${item.bonus_def} DEF` : null,
-                        item.bonus_hp ? `+${item.bonus_hp} HP` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className={`font-semibold ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}>{item.name}</p>
+                    {item.description && <p className="mt-0.5 text-xs text-[#a29fb3]">{item.description}</p>}
+                    <p className="mt-1 text-xs text-[#7d7a8c]">
+                      {left !== null && `Còn ${left}/${item.daily_limit} hôm nay`}
+                      {waiting && <span className="text-[#8fe0b0]"> · đang chờ dùng</span>}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => buy(item)}
+                    disabled={!canBuy || isPending}
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-[#e0b050]/60 px-3 py-2 text-xs text-[#f1dba0]
+                      transition-colors hover:bg-[#e0b050]/15 disabled:opacity-30"
+                  >
+                    {isPending
+                      ? '…'
+                      : left === 0
+                        ? 'Hết lượt'
+                        : `🪙 ${price.toLocaleString('vi-VN')}`}
+                  </button>
                 </div>
-              </div>
-
-              <button
-                onClick={() => buy(item)}
-                disabled={!canAfford || isPending}
-                className={`${ui.className} text-xs border border-[#8a8499] text-[#f2ede4] px-3 py-2 rounded-lg
-                  disabled:opacity-30 hover:bg-[#8a8499] hover:text-[#0e0c13] transition-colors whitespace-nowrap`}
-              >
-                {isPending ? '…' : canAfford ? `Mua · ${item.buy_price} vàng` : 'Thiếu vàng'}
-              </button>
-            </div>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }
