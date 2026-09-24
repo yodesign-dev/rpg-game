@@ -15,8 +15,10 @@ const TABS: Tab[] = [
     match: ['/talents', '/classes', '/titles', '/ranking', '/training', '/quests', '/explore'],
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21a8 8 0 0 1 16 0" />
+        {/* Chân dung nhân vật */}
+        <circle cx="12" cy="12" r="9.5" />
+        <circle cx="12" cy="10" r="3.2" />
+        <path d="M6.3 18.7a6.5 6.5 0 0 1 11.4 0" />
       </svg>
     ),
   },
@@ -25,7 +27,8 @@ const TABS: Tab[] = [
     label: 'Kỹ Năng',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" />
+        {/* Tia sét — kỹ năng */}
+        <path d="M13 2 4 14h7l-1 8 9-12h-7Z" />
       </svg>
     ),
   },
@@ -34,9 +37,10 @@ const TABS: Tab[] = [
     label: 'Tháp',
     center: true,
     icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="8" cy="15" r="4" />
-        <path d="M11 12 20 3M17 6l2.5 2.5M14 9l2 2" />
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        {/* Tháp có lỗ châu mai */}
+        <path d="M6 21V9H5V3h3v2h2.5V3h3v2H16V3h3v6h-1v12Z" />
+        <path d="M10 21v-4a2 2 0 0 1 4 0v4M12 11v2" />
       </svg>
     ),
   },
@@ -45,9 +49,10 @@ const TABS: Tab[] = [
     label: 'Túi Đồ',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M7 8V6a5 5 0 0 1 10 0v2" />
-        <rect x="5" y="8" width="14" height="13" rx="2" />
-        <path d="M9 12h6M9 16h6" />
+        {/* Túi vải buộc dây */}
+        <path d="M9 3h6l-1.5 3.5h-3Z" />
+        <path d="M10.5 6.5C6.5 8.5 4 12.5 4 16a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4c0-3.5-2.5-7.5-6.5-9.5" />
+        <path d="M9.5 9.5h5" />
       </svg>
     ),
   },
@@ -56,8 +61,10 @@ const TABS: Tab[] = [
     label: 'Chợ',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6 8h12l-1 12H7Z" />
-        <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+        {/* Sạp chợ có mái che */}
+        <path d="M3 9 5 4h14l2 5" />
+        <path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" />
+        <path d="M5 11.5V21h14v-9.5M9.5 21v-5h5v5" />
       </svg>
     ),
   },
