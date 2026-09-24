@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
+import EnemyFace from '../components/EnemyFace'
 
 const AP_PER_FLOOR = 5
 const PREVIEW_FLOORS = 10
@@ -182,9 +183,14 @@ export default function TowerClimber({
             return (
               <li key={f} className={`flex gap-2 text-xs ${boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
                 <span className={`w-12 shrink-0 ${f <= best ? 'text-[#7d7a8c]' : 'text-white'}`}>T{f}</span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
                   {enemies
-                    ? enemies.map((e) => `${KIND_ICON[e.out_kind]} ${e.out_name} Lv${e.out_level}`).join('  ')
+                    ? enemies.map((e) => (
+                        <span key={e.out_idx} className="inline-flex items-center gap-1.5">
+                          <EnemyFace name={e.out_name} size={boss ? 28 : 20} />
+                          {KIND_ICON[e.out_kind]} {e.out_name} Lv{e.out_level}
+                        </span>
+                      ))
                     : '…'}
                 </span>
               </li>
@@ -251,7 +257,8 @@ function ClimbReport({ result }: { result: ClimbResult }) {
             </div>
             <div className="mt-1 space-y-0.5">
               {f.enemies.map((e, i) => (
-                <p key={i} className="text-[#a29fb3]">
+                <p key={i} className="flex flex-wrap items-center gap-x-1 text-[#a29fb3]">
+                  <EnemyFace name={e.name} size={18} />
                   {KIND_ICON[e.kind]} {e.name} Lv{e.level} →{' '}
                   <span className={e.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
                     {e.result === 'win' ? 'hạ' : e.result === 'flee' ? 'rút lui' : 'gục'}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
+import EnemyFace from '../components/EnemyFace'
 
 
 
@@ -365,6 +366,7 @@ function TurnRow({
       <div className="flex items-baseline gap-1.5 flex-wrap">
         <span>{f.result === 'win' ? '✅' : f.result === 'flee' ? '⏱️' : '💀'}</span>
         <b className="text-white">T{f.turn}</b>
+        <EnemyFace name={f.enemy} size={18} />
         <span className={f.boss ? 'text-[#f0a8a8] font-semibold' : 'text-[#e5e1ed]'}>
           {f.boss && '👑 '}
           {f.enemy} <span className="text-[#7d7a8c] font-normal">Lv{f.level}</span>

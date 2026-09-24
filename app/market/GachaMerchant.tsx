@@ -6,6 +6,7 @@ import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 import { ItemIcon } from '../components/combat-ui'
+import { MERCHANT_PORTRAIT } from '@/lib/portraits'
 
 
 const PITY = 50
@@ -104,7 +105,13 @@ export default function GachaMerchant({
     <div className={`${ui.className} space-y-5`}>
       {/* NPC */}
       <div className="rounded-lg border border-[#6b4a7a]/60 bg-gradient-to-br from-[#241a2c] to-[#0e0c13] p-4 flex gap-4 items-center">
-        <div className="text-5xl shrink-0">🧙</div>
+        {/* eslint-disable-next-line @next/next/no-img-element -- sprite 64 px, phóng bằng CSS pixelated */}
+        <img
+          src={MERCHANT_PORTRAIT}
+          alt="Thương Nhân Bí Ẩn"
+          draggable={false}
+          className="h-28 w-[72px] shrink-0 object-contain object-bottom [image-rendering:pixelated]"
+        />
         <div className="min-w-0">
           <p className="text-[#f2ede4] text-sm font-semibold">Thương Nhân Bí Ẩn</p>
           <p className="text-xs text-[#a29fb3] mt-1 leading-relaxed">
