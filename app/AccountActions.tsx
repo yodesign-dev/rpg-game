@@ -30,10 +30,8 @@ export default function AccountActions({
     setDeleting(true)
 
     const supabase = createClient()
-    const { error: deleteError } = await supabase
-      .from('characters')
-      .delete()
-      .eq('id', characterId)
+    // Xoá qua RPC (client không có quyền DELETE trực tiếp trên characters)
+    const { error: deleteError } = await supabase.rpc('delete_character', { p_character_id: characterId })
 
     if (deleteError) {
       setError(deleteError.message)

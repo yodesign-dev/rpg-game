@@ -5037,3 +5037,18 @@ as $$
   ) x;
 $$;
 
+-- Xoá nhân vật (client không có quyền DELETE trên characters)
+create or replace function public.delete_character(p_character_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  delete from characters c where c.id = p_character_id and c.user_id = auth.uid();
+  if not found then raise exception 'Không tìm thấy nhân vật hoặc không có quyền xoá'; end if;
+end;
+$$;
+
+revoke execute on function public.delete_character(uuid) from public, anon;
+grant execute on function public.delete_character(uuid) to authenticated;
