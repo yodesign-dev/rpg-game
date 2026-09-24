@@ -15,10 +15,9 @@ const TABS: Tab[] = [
     match: ['/talents', '/classes', '/titles', '/ranking', '/training', '/quests', '/explore'],
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        {/* Chân dung nhân vật */}
-        <circle cx="12" cy="12" r="9.5" />
-        <circle cx="12" cy="10" r="3.2" />
-        <path d="M6.3 18.7a6.5 6.5 0 0 1 11.4 0" />
+        {/* Khiên có huy hiệu kiếm */}
+        <path d="M12 2.5c2.6 1.7 5 2.5 7.5 2.5v6c0 5-3.2 8.6-7.5 10.5C7.7 19.6 4.5 16 4.5 11V5c2.5 0 4.9-.8 7.5-2.5Z" />
+        <path d="M12 6.5v11M9.5 14h5" />
       </svg>
     ),
   },
