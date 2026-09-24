@@ -19,7 +19,15 @@ type ClimbFloor = {
   exp?: number
   gold?: number
   drops?: { key: string; name: string; icon: string | null; rarity: string; qty: number }[]
-  enemies: { name: string; level: number; kind: string; result: 'win' | 'lose' | 'flee'; hp_left: number; dmg_taken: number }[]
+  enemies: {
+    name: string
+    level: number
+    kind: string
+    result: 'win' | 'lose' | 'flee'
+    hp_left: number
+    dmg_taken: number
+    log?: LastFight['log']
+  }[]
 }
 
 type ClimbResult = {
@@ -265,17 +273,7 @@ function ClimbReport({ result }: { result: ClimbResult }) {
             </div>
             <div className="mt-1 space-y-0.5">
               {f.enemies.map((e, i) => (
-                <p key={i} className="flex flex-wrap items-center gap-x-1 text-[#a29fb3]">
-                  <EnemyAvatar name={e.name} size={24} boss={e.kind === 'boss'} />
-                  <span className={ENEMY_TIER_TEXT[enemyTier(e.name, e.kind === 'boss')]}>
-                    {KIND_ICON[e.kind]} {e.name}
-                  </span>{' '}
-                  Lv{e.level} →{' '}
-                  <span className={e.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
-                    {e.result === 'win' ? 'hạ' : e.result === 'flee' ? 'rút lui' : 'gục'}
-                  </span>{' '}
-                  · 😓 -{e.dmg_taken} · ❤️ {e.hp_left}/{result.max_hp}
-                </p>
+                <EnemyRow key={i} floor={f.floor} enemy={e} maxHp={result.max_hp} />
               ))}
             </div>
             {(f.drops ?? []).length > 0 && (
@@ -322,6 +320,31 @@ function ClimbReport({ result }: { result: ClimbResult }) {
           <p className="text-[#a29fb3]">🎁 Nhặt được {drops.reduce((n, d) => n + d.qty, 0)} vật phẩm — xem trong Túi Đồ</p>
         )}
       </div>
+    </div>
+  )
+}
+
+function EnemyRow({ floor, enemy: e, maxHp }: { floor: number; enemy: ClimbFloor['enemies'][number]; maxHp: number }) {
+  const [open, setOpen] = useState(false)
+  const hasLog = !!e.log?.length
+  return (
+    <div>
+      <p
+        className={`flex flex-wrap items-center gap-x-1 text-[#a29fb3] ${hasLog ? 'cursor-pointer' : ''}`}
+        onClick={hasLog ? () => setOpen((v) => !v) : undefined}
+      >
+        {hasLog && <span className="text-[#7d7a8c] w-2.5">{open ? '▾' : '▸'}</span>}
+        <EnemyAvatar name={e.name} size={24} boss={e.kind === 'boss'} />
+        <span className={ENEMY_TIER_TEXT[enemyTier(e.name, e.kind === 'boss')]}>
+          {KIND_ICON[e.kind]} {e.name}
+        </span>{' '}
+        Lv{e.level} →{' '}
+        <span className={e.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
+          {e.result === 'win' ? 'hạ' : e.result === 'flee' ? 'rút lui' : 'gục'}
+        </span>{' '}
+        · 😓 -{e.dmg_taken} · ❤️ {e.hp_left}/{maxHp}
+      </p>
+      {open && e.log && <LastFightLog fight={{ turn: floor, enemy: e.name, log: e.log }} />}
     </div>
   )
 }

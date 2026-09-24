@@ -2585,6 +2585,7 @@ begin
       'level', v_enemy.level,
       'boss', v_is_boss,
       'tier', v_tier,
+      'log', v_fight_log,
       'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
       'hp_left', v_hp,
       'dmg_taken', v_dmg_taken,
@@ -3777,7 +3778,7 @@ begin
       v_enemies := v_enemies || jsonb_build_object(
         'name', v_enemy.out_name, 'level', v_enemy.out_level, 'kind', v_enemy.out_kind,
         'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
-        'hp_left', v_hp, 'dmg_taken', v_dmg_taken
+        'hp_left', v_hp, 'dmg_taken', v_dmg_taken, 'log', v_fight_log
       );
 
       if not v_win then

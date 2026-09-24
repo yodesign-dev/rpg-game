@@ -35,6 +35,7 @@ type Fight = {
   drops: { key: string; rarity: string }[]
   potion?: string
   guard?: boolean
+  log?: LastFight['log']
 }
 
 
@@ -415,12 +416,18 @@ function TurnRow({
   maxHp: number
   dropInfo: Record<string, { name: string; icon: string | null; rarity: string }>
 }) {
+  const [open, setOpen] = useState(false)
   const pct = Math.max(0, Math.min(100, (f.hp_left / Math.max(1, maxHp)) * 100))
   const barColor = pct > 50 ? '#8fe0b0' : pct > 20 ? '#f0c060' : '#e07070'
+  const hasLog = !!f.log?.length
 
   return (
     <div className={`px-3 py-2 text-xs ${f.result === 'lose' ? 'bg-[#e07070]/[0.08]' : ''}`}>
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div
+        className={`flex items-center gap-1.5 flex-wrap ${hasLog ? 'cursor-pointer' : ''}`}
+        onClick={hasLog ? () => setOpen((v) => !v) : undefined}
+      >
+        {hasLog && <span className="text-[#7d7a8c] w-2.5">{open ? '▾' : '▸'}</span>}
         <span>{f.result === 'win' ? '✅' : f.result === 'flee' ? '⏱️' : '💀'}</span>
         <b className="text-white">T{f.turn}</b>
         <EnemyAvatar name={f.enemy} size={24} boss={f.boss} />
@@ -456,6 +463,7 @@ function TurnRow({
           {f.hp_left}/{maxHp}
         </span>
       </div>
+      {open && f.log && <LastFightLog fight={{ turn: f.turn, enemy: f.enemy, log: f.log }} />}
     </div>
   )
 }
