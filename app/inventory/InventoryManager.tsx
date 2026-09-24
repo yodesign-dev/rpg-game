@@ -100,14 +100,38 @@ const TYPE_LABEL: Record<string, string> = {
 
 export type InventoryTab = 'equip' | 'bag' | 'craft'
 
-const TYPE_SHORT: Record<string, string> = {
-  weapon: 'Vũ khí',
-  armor: 'Giáp',
-  consumable: 'Hồi phục',
-  material: 'Nguyên liệu',
+const TYPE_ORDER = ['weapon', 'armor', 'consumable', 'material']
+
+// Nhóm hiển thị trong tab Túi đồ: trang bị chia theo ô, còn lại theo loại
+const GROUPS: { key: string; label: string; icon: string }[] = [
+  { key: 'weapon', label: 'Vũ khí', icon: '⚔️' },
+  { key: 'shield', label: 'Khiên', icon: '🛡️' },
+  { key: 'head', label: 'Mũ', icon: '🪖' },
+  { key: 'chest', label: 'Áo', icon: '🎽' },
+  { key: 'belt', label: 'Đai', icon: '🎗️' },
+  { key: 'boot', label: 'Giày', icon: '👢' },
+  { key: 'ring', label: 'Nhẫn', icon: '💍' },
+  { key: 'amulet', label: 'Bùa', icon: '📿' },
+  { key: 'consumable', label: 'Hồi phục', icon: '🧪' },
+  { key: 'material', label: 'Nguyên liệu', icon: '🪨' },
+]
+
+function groupOf(item: { type: string; slot: string | null }) {
+  return item.type === 'weapon' || item.type === 'armor' ? (item.slot ?? item.type) : item.type
 }
 
-const TYPE_ORDER = ['weapon', 'armor', 'consumable', 'material']
+const EQUIP_SLOT_LABEL: Record<string, string> = {
+  head: 'Đầu',
+  l_arm: 'Tay trái',
+  r_arm: 'Tay phải',
+  both_arms: '2 tay',
+  chest: 'Ngực',
+  belt: 'Thắt lưng',
+  amulet: 'Bùa',
+  boot: 'Giày',
+  ring_1: 'Nhẫn 1',
+  ring_2: 'Nhẫn 2',
+}
 
 type Item = {
   id: string
@@ -153,7 +177,16 @@ type Recipe = {
   goldCost: number
   successRate: number
   description: string | null
-  resultItem: { id: string; key: string; name: string; rarity: string; icon: string | null; type: string }
+  resultItem: {
+    id: string
+    key: string
+    name: string
+    rarity: string
+    icon: string | null
+    type: string
+    slot?: string | null
+    item_level?: number
+  }
   ingredients: { item: { id: string; key: string; name: string }; quantity: number }[]
 }
 
@@ -191,7 +224,11 @@ export default function InventoryManager({
   materialChain: MaterialInfo[]
 }) {
   const [tab, setTabState] = useState<InventoryTab>(initialTab)
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [showEquipped, setShowEquipped] = useState(true)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [craftFilter, setCraftFilter] = useState<string>('all')
+  const [craftableOnly, setCraftableOnly] = useState(false)
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -515,25 +552,33 @@ export default function InventoryManager({
     setSelected(new Set())
   }
 
-  // Tab Trang bị: đồ đang mặc. Tab Túi đồ: đồ chưa mặc, lọc theo loại.
+  // Tab Trang bị: đồ đang mặc. Tab Túi đồ: mọi món (kể cả đang mặc, có nhãn), lọc theo ô.
   const bagRows = rows.filter((r) => !r.equipped)
+  const bagView = rows.filter((r) => showEquipped || !r.equipped)
   const listRows =
     tab === 'equip'
       ? rows.filter((r) => r.equipped)
-      : bagRows.filter((r) => typeFilter === 'all' || r.items.type === typeFilter)
-  const groups = TYPE_ORDER.map((type) => ({
-    type,
-    rows: listRows.filter((r) => r.items.type === type),
+      : bagView.filter((r) => groupFilter === 'all' || groupOf(r.items) === groupFilter)
+  // Trong mỗi nhóm: đang mặc lên đầu, rồi món mạnh hơn, rồi theo điểm
+  const rank = (r: InventoryRow) => (r.equipped ? 2 : isUpgrade(r) ? 1 : 0)
+  const groups = GROUPS.map((g) => ({
+    ...g,
+    rows: listRows
+      .filter((r) => groupOf(r.items) === g.key)
+      .sort((a, b) => rank(b) - rank(a) || itemScore(b) - itemScore(a)),
   })).filter((g) => g.rows.length > 0)
 
-  const craftableCount = recipes.filter(
-    (recipe) =>
-      localGold >= recipe.goldCost &&
-      recipe.ingredients.every(
-        (ing) =>
-          rows.filter((r) => r.items.id === ing.item.id).reduce((sum, r) => sum + r.quantity, 0) >= ing.quantity
-      )
-  ).length
+  const canCraftRecipe = (recipe: Recipe) =>
+    localGold >= recipe.goldCost &&
+    recipe.ingredients.every(
+      (ing) => rows.filter((r) => r.items.id === ing.item.id).reduce((sum, r) => sum + r.quantity, 0) >= ing.quantity
+    )
+  const craftableCount = recipes.filter(canCraftRecipe).length
+  const craftGroupOf = (recipe: Recipe) => groupOf({ type: recipe.resultItem.type, slot: recipe.resultItem.slot ?? null })
+  const recipeView = recipes
+    .filter((recipe) => craftFilter === 'all' || craftGroupOf(recipe) === craftFilter)
+    .filter((recipe) => !craftableOnly || canCraftRecipe(recipe))
+    .sort((a, b) => (a.resultItem.item_level ?? 1) - (b.resultItem.item_level ?? 1) || a.goldCost - b.goldCost)
 
   function setTab(next: InventoryTab) {
     if (next === tab) return
@@ -707,25 +752,38 @@ export default function InventoryManager({
         </p>
       )}
 
-      {tab === 'bag' && bagRows.length > 0 && (
-        <div className={`${ui.className} flex flex-wrap gap-1.5`}>
-          {['all', ...TYPE_ORDER].map((type) => {
-            const n = type === 'all' ? bagRows.length : bagRows.filter((r) => r.items.type === type).length
-            if (n === 0) return null
-            return (
-              <button
-                key={type}
-                onClick={() => setTypeFilter(type)}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  typeFilter === type
-                    ? 'border-[#8a8499] bg-[#2a2533] text-[#f2ede4]'
-                    : 'border-[#2a2533] text-[#8a8499]'
-                }`}
-              >
-                {type === 'all' ? 'Tất cả' : TYPE_SHORT[type]} ({n})
-              </button>
-            )
-          })}
+      {tab === 'bag' && rows.length > 0 && (
+        <div className={`${ui.className} space-y-2`}>
+          <div className="-mx-4 px-4 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+            {[{ key: 'all', label: 'Tất cả', icon: '' }, ...GROUPS].map((g) => {
+              const n = g.key === 'all' ? bagView.length : bagView.filter((r) => groupOf(r.items) === g.key).length
+              if (n === 0 && g.key !== 'all') return null
+              const on = groupFilter === g.key
+              return (
+                <button
+                  key={g.key}
+                  onClick={() => setGroupFilter(g.key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                    on
+                      ? 'border-[#8fe0b0]/60 bg-[#8fe0b0]/15 text-[#c8f5dc]'
+                      : 'border-white/10 text-[#a29fb3] hover:text-white'
+                  }`}
+                >
+                  {g.icon && <span aria-hidden>{g.icon} </span>}
+                  {g.label} <span className="text-[#7d7a8c]">{n}</span>
+                </button>
+              )
+            })}
+          </div>
+          <label className="flex items-center gap-2 text-xs text-[#a29fb3] cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={showEquipped}
+              onChange={(e) => setShowEquipped(e.target.checked)}
+              className="accent-[#8fe0b0]"
+            />
+            Hiện đồ đang mặc
+          </label>
         </div>
       )}
 
@@ -796,11 +854,29 @@ export default function InventoryManager({
       )}
 
       {tab !== 'craft' && groups.map((group) => (
-        <section key={group.type}>
-          <h2 className={`${ui.className} text-xs tracking-widest text-[#8a8499] mb-3`}>
-            {TYPE_LABEL[group.type] ?? group.type.toUpperCase()}
-          </h2>
+        <section key={group.key}>
+          <button
+            type="button"
+            onClick={() =>
+              setCollapsed((c) => {
+                const next = new Set(c)
+                if (next.has(group.key)) next.delete(group.key)
+                else next.add(group.key)
+                return next
+              })
+            }
+            className={`${ui.className} flex w-full items-center gap-2 mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3] hover:text-white`}
+            aria-expanded={!collapsed.has(group.key)}
+          >
+            <span aria-hidden>{group.icon}</span>
+            {group.label.toUpperCase()}
+            <span className="font-normal tracking-normal text-[#7d7a8c]">{group.rows.length}</span>
+            <span className="ml-auto text-[#7d7a8c]" aria-hidden>
+              {collapsed.has(group.key) ? '▸' : '▾'}
+            </span>
+          </button>
 
+          {!collapsed.has(group.key) && (
           <div className="space-y-3">
             {group.rows.map((row) => {
               const item = row.items
@@ -818,10 +894,10 @@ export default function InventoryManager({
                 <div
                   key={row.id}
                   onClick={sellMode && !row.equipped && !row.locked ? () => toggleRow(row.id) : undefined}
-                  className={`rounded-lg border p-4 flex flex-wrap items-center justify-between gap-3
+                  className={`rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3
                     ${sellMode && selected.has(row.id)
                       ? 'border-[#e0b050]/70 bg-[#221c10]'
-                      : row.equipped ? 'border-[#3d5a45] bg-[#151d17]' : 'border-[#2a2533] bg-[#15121d]'}
+                      : row.equipped ? 'border-[#8fe0b0]/45 bg-[#8fe0b0]/[0.07]' : 'border-white/[0.09] bg-white/[0.045]'}
                     ${sellMode && !row.equipped && !row.locked ? 'cursor-pointer' : ''}
                     ${sellMode && (row.equipped || row.locked) ? 'opacity-40' : ''}`}
                 >
@@ -862,6 +938,11 @@ export default function InventoryManager({
                           <span className={`${ui.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
                         )}
                         {row.locked && <span className="text-xs"> 🔒</span>}
+                        {row.equipped && (
+                          <span className={`${ui.className} ml-1.5 whitespace-nowrap rounded-lg border border-[#8fe0b0]/60 bg-[#8fe0b0]/15 px-1.5 text-xs text-[#c8f5dc]`}>
+                            ✓ Đang mặc{row.equip_slot && EQUIP_SLOT_LABEL[row.equip_slot] ? ` · ${EQUIP_SLOT_LABEL[row.equip_slot]}` : ''}
+                          </span>
+                        )}
                         {isUpgrade(row) && (
                           <span className={`${ui.className} ml-1.5 text-xs text-[#8fe0b0] border border-[#8fe0b0]/50 rounded-lg px-1`}>
                             ▲ Mạnh hơn
@@ -1036,6 +1117,7 @@ export default function InventoryManager({
               )
             })}
           </div>
+          )}
         </section>
       ))}
 
@@ -1076,13 +1158,48 @@ export default function InventoryManager({
           </p>
         )}
 
-        {recipes.length === 0 ? (
-          <p className={`${ui.className} text-center text-xs text-[#5c5470]`}>
-            Chưa có công thức chế tạo nào.
+        {recipes.length > 0 && (
+          <div className={`${ui.className} space-y-2 mb-4`}>
+            <div className="-mx-4 px-4 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+              {[{ key: 'all', label: 'Tất cả', icon: '' }, ...GROUPS].map((g) => {
+                const n = g.key === 'all' ? recipes.length : recipes.filter((rc) => craftGroupOf(rc) === g.key).length
+                if (n === 0 && g.key !== 'all') return null
+                const on = craftFilter === g.key
+                return (
+                  <button
+                    key={g.key}
+                    onClick={() => setCraftFilter(g.key)}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                      on
+                        ? 'border-[#8fe0b0]/60 bg-[#8fe0b0]/15 text-[#c8f5dc]'
+                        : 'border-white/10 text-[#a29fb3] hover:text-white'
+                    }`}
+                  >
+                    {g.icon && <span aria-hidden>{g.icon} </span>}
+                    {g.label} <span className="text-[#7d7a8c]">{n}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <label className="flex items-center gap-2 text-xs text-[#a29fb3] cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={craftableOnly}
+                onChange={(e) => setCraftableOnly(e.target.checked)}
+                className="accent-[#8fe0b0]"
+              />
+              Chỉ hiện món chế được ngay ({craftableCount})
+            </label>
+          </div>
+        )}
+
+        {recipeView.length === 0 ? (
+          <p className={`${ui.className} text-center text-xs text-[#7d7a8c]`}>
+            {recipes.length === 0 ? 'Chưa có công thức chế tạo nào.' : 'Không có công thức nào khớp bộ lọc.'}
           </p>
         ) : (
           <div className="space-y-3">
-            {recipes.map((recipe) => {
+            {recipeView.map((recipe) => {
               const isPending = pendingRecipeId === recipe.id
               const isEquipment = recipe.resultItem.type === 'weapon' || recipe.resultItem.type === 'armor'
               const isBoosted = isEquipment && !!boosted[recipe.id]
@@ -1097,7 +1214,7 @@ export default function InventoryManager({
               const canCraft = canAffordGold && hasAllMaterials
 
               return (
-                <div key={recipe.id} className="rounded-lg border border-[#2a2533] bg-[#15121d] p-4">
+                <div key={recipe.id} className="rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
                       {recipe.resultItem.icon && (
@@ -1118,6 +1235,9 @@ export default function InventoryManager({
                           {recipe.name}
                         </p>
                         <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
+                          {recipe.resultItem.item_level && recipe.resultItem.item_level > 1
+                            ? `Lv${recipe.resultItem.item_level} · `
+                            : ''}
                           {Math.round(recipe.successRate * 100)}% thành công
                           {cost > 0 && ` · ${cost} vàng`}
                         </p>

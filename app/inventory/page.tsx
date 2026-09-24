@@ -50,7 +50,7 @@ export default async function InventoryPage({
       .eq('character_id', character.id),
     supabase
       .from('recipes')
-      .select('id, key, name, gold_cost, success_rate, description, result_item:items(id, key, name, rarity, icon, type)'),
+      .select('id, key, name, gold_cost, success_rate, description, result_item:items(id, key, name, rarity, icon, type, slot, item_level)'),
     supabase
       .from('recipe_ingredients')
       .select('recipe_id, quantity, item:items(id, key, name)'),
