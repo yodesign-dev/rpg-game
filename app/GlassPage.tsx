@@ -4,18 +4,20 @@ import BottomNav from './BottomNav'
 
 // Khung chung cho mọi trang (trừ màn Nhân Vật): cùng nền, cùng header, cùng bottom nav.
 // back: trang con mở từ màn Nhân Vật (danh hiệu, xếp hạng…) — tab chính thì đã có bottom nav.
-// aside: góc phải tiêu đề, vd. số vàng ở Chợ.
+// aside: góc phải tiêu đề, vd. số vàng ở Chợ. wide: trang nhiều thẻ (Túi Đồ) rộng hơn trên màn lớn.
 export default function GlassPage({
   title,
   subtitle,
   back = false,
   aside,
+  wide = false,
   children,
 }: {
   title: string
   subtitle?: string
   back?: boolean
   aside?: React.ReactNode
+  wide?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -28,7 +30,7 @@ export default function GlassPage({
           '#07070a',
       }}
     >
-      <div className={`${ui.className} mx-auto max-w-2xl px-4 pt-5`}>
+      <div className={`${ui.className} mx-auto ${wide ? 'max-w-6xl' : 'max-w-2xl'} px-4 pt-5`}>
         <header className="mb-5">
           {back && (
             <Link href="/" className="inline-block mb-3 text-sm text-[#a29fb3] hover:text-white">

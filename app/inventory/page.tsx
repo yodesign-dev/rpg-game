@@ -83,7 +83,7 @@ export default async function InventoryPage({
   const currentHp = Math.min(stats.maxHp, regenHp ?? stats.maxHp)
 
   return (
-    <GlassPage title="Túi Đồ">
+    <GlassPage title="Túi Đồ" wide>
       {inventoryError && (
         <p className={`${ui.className} text-xs text-[#e09595] text-center mb-6`}>
           Không tải được túi đồ: {inventoryError.message}

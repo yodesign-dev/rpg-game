@@ -21,6 +21,14 @@ const RARITY_BORDER: Record<string, string> = {
   legendary: 'border-[#8a6a1f]',
 }
 
+// Viền trái của thẻ lưới theo độ hiếm (sáng hơn RARITY_BORDER để nhìn lướt là nhận ra)
+const RARITY_ACCENT: Record<string, string> = {
+  common: 'border-l-[#7d7a8c]',
+  rare: 'border-l-[#5b8fd8]',
+  epic: 'border-l-[#a66bd8]',
+  legendary: 'border-l-[#e0902a]',
+}
+
 const RARITY_LABEL: Record<string, string> = {
   common: 'Thường',
   rare: 'Hiếm',
@@ -237,8 +245,9 @@ export default function InventoryManager({
   const [tab, setTabState] = useState<InventoryTab>(initialTab)
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [showEquipped, setShowEquipped] = useState(true)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [craftFilter, setCraftFilter] = useState<string>('all')
+  const [focusId, setFocusId] = useState<string | null>(null)
   const [craftableOnly, setCraftableOnly] = useState(false)
   const [rows, setRows] = useState<InventoryRow[]>(items)
   const [pendingRowId, setPendingRowId] = useState<string | null>(null)
@@ -570,14 +579,15 @@ export default function InventoryManager({
     tab === 'equip'
       ? rows.filter((r) => r.equipped)
       : bagView.filter((r) => groupFilter === 'all' || groupOf(r.items) === groupFilter)
-  // Trong mỗi nhóm: đang mặc lên đầu, rồi món mạnh hơn, rồi theo điểm
-  const rank = (r: InventoryRow) => (r.equipped ? 2 : isUpgrade(r) ? 1 : 0)
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    rows: listRows
-      .filter((r) => groupOf(r.items) === g.key)
-      .sort((a, b) => rank(b) - rank(a) || itemScore(b) - itemScore(a)),
-  })).filter((g) => g.rows.length > 0)
+  // Lưới tab Túi đồ: xếp theo thứ tự ô (vũ khí → … → nguyên liệu), rồi món mạnh hơn, rồi theo điểm
+  const groupIndex = (r: InventoryRow) => GROUPS.findIndex((g) => g.key === groupOf(r.items))
+  const byGroupThenScore = (a: InventoryRow, b: InventoryRow) =>
+    groupIndex(a) - groupIndex(b) ||
+    Number(isUpgrade(b)) - Number(isUpgrade(a)) ||
+    itemScore(b) - itemScore(a)
+  const wornTiles = listRows.filter((r) => r.equipped).sort(byGroupThenScore)
+  const bagTiles = listRows.filter((r) => !r.equipped).sort(byGroupThenScore)
+  const detailRow = rows.find((r) => r.id === detailId) ?? null
 
   const canCraftRecipe = (recipe: Recipe) =>
     localGold >= recipe.goldCost &&
@@ -625,11 +635,16 @@ export default function InventoryManager({
     }
 
     const item = row.items
+    const focused = focusId === row.id
     return (
-      <div
+      <button
+        type="button"
+        onClick={() => setFocusId(focused ? null : row.id)}
+        aria-pressed={focused}
         title={`${item.name} [${RARITY_LABEL[tierOf(row)]}]`}
         className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-lg border ${RARITY_BORDER[tierOf(row)] ?? RARITY_BORDER.common}
-          bg-[#15121d] flex flex-col items-center justify-center gap-0.5 px-1 shrink-0`}
+          bg-[#15121d] flex flex-col items-center justify-center gap-0.5 px-1 shrink-0 transition-shadow
+          ${focused ? 'ring-2 ring-[#8fe0b0] ring-offset-2 ring-offset-[#07070a]' : 'hover:brightness-125'}`}
       >
         {item.icon ? (
           <img
@@ -647,6 +662,326 @@ export default function InventoryManager({
         >
           {item.name}
         </span>
+      </button>
+    )
+  }
+
+  // Dòng chỉ số gọn cho thẻ lưới: "ATK +80 · Chí mạng +6.6% · Xuyên 12% DEF"
+  function statLine(row: InventoryRow) {
+    const it = row.items
+    if (it.type === 'consumable') return [it.restore_ap > 0 ? `Hồi ${it.restore_ap} AP` : `Hồi ${it.heal_amount} HP`]
+    if (it.type === 'material') return [it.sell_price != null ? `Bán ${it.sell_price} vàng` : 'Nguyên liệu']
+    const parts: string[] = []
+    const atk = it.bonus_atk + row.rolled_atk
+    const def = it.bonus_def + row.rolled_def
+    const hp = it.bonus_hp + row.rolled_hp
+    if (atk) parts.push(`ATK +${atk}`)
+    if (def) parts.push(`DEF +${def}`)
+    if (hp) parts.push(`HP +${hp}`)
+    if (row.rolled_crit > 0) parts.push(`Chí mạng +${(row.rolled_crit * 100).toFixed(1)}%`)
+    if (row.rolled_lifesteal > 0) parts.push(`Hút máu +${(row.rolled_lifesteal * 100).toFixed(1)}%`)
+    for (const [k, v] of Object.entries(row.rolled_extra ?? {})) if (EXTRA_AFFIX[k]) parts.push(EXTRA_AFFIX[k].label(v))
+    return parts
+  }
+
+  // Thẻ gọn trong lưới — bấm để mở chi tiết (chế độ bán: bấm để chọn)
+  const renderTile = (row: InventoryRow) => {
+    const item = row.items
+    const tier = tierOf(row)
+    const isGear = item.type === 'weapon' || item.type === 'armor'
+    const group = GROUPS.find((g) => g.key === groupOf(item))
+    const selectable = sellMode && !row.equipped && !row.locked
+    const picked = sellMode && selected.has(row.id)
+    return (
+      <button
+        key={row.id}
+        type="button"
+        onClick={() => (sellMode ? selectable && toggleRow(row.id) : setDetailId(row.id))}
+        disabled={sellMode && !selectable}
+        className={`${ui.className} relative text-left rounded-xl border border-white/[0.08] border-l-4 p-3 transition-colors
+          ${RARITY_ACCENT[isGear ? tier : 'common']}
+          ${picked ? 'bg-[#e0b050]/15 border-[#e0b050]/60' : row.equipped ? 'bg-[#8fe0b0]/[0.06]' : 'bg-white/[0.04] hover:bg-white/[0.08]'}
+          ${sellMode && !selectable ? 'opacity-40' : ''}`}
+      >
+        <div className="flex items-start gap-2.5">
+          <div
+            className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common} bg-[#0b0a10]
+              flex items-center justify-center shrink-0`}
+          >
+            {item.icon ? (
+              <img src={`/items/${item.icon}`} alt="" className="w-8 h-8" style={{ imageRendering: 'pixelated' }} />
+            ) : (
+              <span className="text-lg">{group?.icon}</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`text-sm font-semibold leading-snug ${RARITY_COLOR[tier] ?? RARITY_COLOR.common}`}>
+              {item.name}
+              {row.enchant_level > 0 && <span className="text-[#e0b050]"> +{row.enchant_level}</span>}
+              {row.legendary_effect && <span className="text-[#f0c060]"> ✦</span>}
+            </p>
+            <p className="mt-0.5 text-[11px] uppercase tracking-wider text-[#7d7a8c] leading-tight">
+              {isGear ? `${RARITY_LABEL[tier]} · ${group?.label ?? ''}` : group?.label}
+              {row.quantity > 1 && ` · ×${row.quantity}`}
+            </p>
+          </div>
+        </div>
+        <p className="mt-2 border-t border-white/[0.07] pt-2 text-xs leading-relaxed text-[#c9c4d4]">
+          {statLine(row).join(' · ')}
+        </p>
+        <span className="absolute right-2 top-2 flex gap-1 text-[11px]">
+          {row.locked && <span title="Đã khoá">🔒</span>}
+          {isUpgrade(row) && <span className="rounded bg-[#8fe0b0]/20 px-1 text-[#c8f5dc]" title="Mạnh hơn đồ đang mặc">▲</span>}
+          {picked && <span className="rounded bg-[#e0b050] px-1 text-[#0e0c13]">✓</span>}
+        </span>
+      </button>
+    )
+  }
+
+  // Thẻ 1 món đồ — dùng cho danh sách tab Túi đồ và thẻ chi tiết khi bấm ô ở tab Trang bị
+  const renderRow = (row: InventoryRow) => {
+    const item = row.items
+    const isPending = pendingRowId === row.id
+    const tier = tierOf(row)
+    const rarityClass = RARITY_COLOR[tier] ?? RARITY_COLOR.common
+    const isArmItem = item.slot === 'weapon' || item.slot === 'shield'
+    const isRingItem = item.slot === 'ring'
+    const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
+    const btnBase = `${ui.className} text-xs border border-[#8a8499] text-[#f2ede4] px-3 py-2 rounded-lg
+      disabled:opacity-30 hover:bg-[#8a8499] hover:text-[#0e0c13] transition-colors whitespace-nowrap`
+    const hasAffix = row.rolled_crit > 0 || row.rolled_lifesteal > 0
+
+    return (
+      <div
+        key={row.id}
+        onClick={sellMode && !row.equipped && !row.locked ? () => toggleRow(row.id) : undefined}
+        className={`rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3
+          ${sellMode && selected.has(row.id)
+            ? 'border-[#e0b050]/70 bg-[#221c10]'
+            : row.equipped ? 'border-[#8fe0b0]/45 bg-[#8fe0b0]/[0.07]' : 'border-white/[0.09] bg-white/[0.045]'}
+          ${sellMode && !row.equipped && !row.locked ? 'cursor-pointer' : ''}
+          ${sellMode && (row.equipped || row.locked) ? 'opacity-40' : ''}`}
+      >
+        <div className="flex items-center gap-3 min-w-0 flex-1 basis-56">
+          {sellMode && (
+            <input
+              type="checkbox"
+              aria-label={`Chọn bán ${item.name}`}
+              checked={selected.has(row.id)}
+              disabled={row.equipped || row.locked}
+              onChange={() => toggleRow(row.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="accent-[#e0b050] w-4 h-4 shrink-0"
+            />
+          )}
+          {item.icon && (
+            <div
+              className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common}
+                bg-[#0b0a10] flex items-center justify-center shrink-0`}
+            >
+              <img
+                src={`/items/${item.icon}`}
+                alt=""
+                className="w-8 h-8"
+                style={{ imageRendering: 'pixelated' }}
+              />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className={rarityClass}>
+              {(item.type === 'weapon' || item.type === 'armor') && (
+                <span className={`${ui.className} block text-xs tracking-widest`}>
+                  {RARITY_LABEL[tier]?.toUpperCase()}
+                </span>
+              )}
+              {item.name}
+              {row.enchant_level > 0 && (
+                <span className={`${ui.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
+              )}
+              {row.locked && <span className="text-xs"> 🔒</span>}
+              {row.equipped && (
+                <span className={`${ui.className} ml-1.5 whitespace-nowrap rounded-lg border border-[#8fe0b0]/60 bg-[#8fe0b0]/15 px-1.5 text-xs text-[#c8f5dc]`}>
+                  ✓ Đang mặc{row.equip_slot && EQUIP_SLOT_LABEL[row.equip_slot] ? ` · ${EQUIP_SLOT_LABEL[row.equip_slot]}` : ''}
+                </span>
+              )}
+              {isUpgrade(row) && (
+                <span className={`${ui.className} ml-1.5 text-xs text-[#8fe0b0] border border-[#8fe0b0]/50 rounded-lg px-1`}>
+                  ▲ Mạnh hơn
+                </span>
+              )}
+              {row.quantity > 1 && (
+                <span className={`${ui.className} text-xs text-[#5c5470]`}> ×{row.quantity}</span>
+              )}
+            </p>
+            {item.description && (
+              <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
+                {item.description}
+              </p>
+            )}
+            <p className={`${ui.className} text-xs text-[#5c5470] mt-1`}>
+              {item.type === 'weapon' &&
+                `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
+              {item.type === 'armor' &&
+                [
+                  item.bonus_atk + row.rolled_atk ? `+${item.bonus_atk + row.rolled_atk} ATK` : null,
+                  item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
+                  item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              {item.type === 'consumable' &&
+                (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
+              {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
+            </p>
+            {hasAffix && (
+              <p className={`${ui.className} text-xs text-[#e0b050] mt-0.5`}>
+                {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
+                {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
+                {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
+              </p>
+            )}
+            {Object.keys(row.rolled_extra ?? {}).length > 0 && (
+              <p className={`${ui.className} text-xs text-[#8fc4e0] mt-0.5`}>
+                {Object.entries(row.rolled_extra ?? {})
+                  .filter(([k]) => EXTRA_AFFIX[k])
+                  .map(([k, v]) => EXTRA_AFFIX[k].label(v))
+                  .join(' · ')}
+              </p>
+            )}
+            {row.legendary_effect && LEGENDARY_EFFECTS[row.legendary_effect] && (
+              <p className={`${ui.className} text-xs text-[#f0c060] mt-0.5`}>
+                ✦ {LEGENDARY_EFFECTS[row.legendary_effect].name}
+                <span className="text-[#a29fb3]"> — {LEGENDARY_EFFECTS[row.legendary_effect].description}</span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {sellMode ? (
+          <span className={`${ui.className} text-xs shrink-0 ${row.equipped ? 'text-[#5c5470]' : 'text-[#e0b050]'}`}>
+            {row.equipped ? 'Đang mặc' : row.locked ? 'Đã khóa' : `${sellPriceOf(row)} vàng`}
+          </span>
+        ) : (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2 max-w-full">
+          <button
+            onClick={() => toggleLock(row)}
+            disabled={isPending}
+            title={row.locked ? 'Mở khóa' : 'Khóa — không bán được'}
+            aria-label={row.locked ? 'Mở khóa' : 'Khóa'}
+            className={`${ui.className} text-xs border px-2 py-2 rounded-lg disabled:opacity-30 ${
+              row.locked
+                ? 'border-[#e0b050]/70 bg-[#e0b050]/15 text-[#e0b050]'
+                : 'border-[#2a2533] opacity-50 hover:opacity-100 hover:border-[#8a8499]'
+            }`}
+          >
+            {row.locked ? '🔒 Khóa' : '🔓'}
+          </button>
+
+          {(item.type === 'weapon' || item.type === 'armor') && (
+            <button
+              onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'enchant' ? null : { rowId: row.id, kind: 'enchant' }))}
+              disabled={row.enchant_level >= 5}
+              className={`${ui.className} text-xs border border-[#e0b050]/50 text-[#e0b050] px-2.5 py-2 rounded-lg disabled:opacity-30 hover:bg-[#e0b050]/10 whitespace-nowrap`}
+            >
+              {row.enchant_level >= 5 ? '🔨 Max' : '🔨 Cường hóa'}
+            </button>
+          )}
+
+          {item.type === 'material' && item.material_tier != null && (
+            <button
+              onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'convert' ? null : { rowId: row.id, kind: 'convert' }))}
+              className={`${ui.className} text-xs border border-[#8fb4c4]/50 text-[#8fb4c4] px-2.5 py-2 rounded-lg hover:bg-[#8fb4c4]/10 whitespace-nowrap`}
+            >
+              ⇅ Rã / Ghép
+            </button>
+          )}
+
+          {row.equipped && (
+            <button
+              onClick={() => unequip(row)}
+              disabled={isPending}
+              className={`${ui.className} text-xs border border-[#8c3f3f] text-[#e09595] px-3 py-2 rounded-lg
+                disabled:opacity-30 hover:bg-[#8c3f3f] hover:text-[#f2ede4] transition-colors whitespace-nowrap`}
+            >
+              {isPending ? '…' : 'Gỡ'}
+            </button>
+          )}
+
+          {!row.equipped && isSingleSlot && (
+            <button onClick={() => equip(row, item.slot!)} disabled={isPending} className={btnBase}>
+              {isPending ? '…' : 'Trang bị'}
+            </button>
+          )}
+
+          {!row.equipped && isArmItem && item.hand === 'two_hand' && (
+            <button onClick={() => equip(row, 'both_arms')} disabled={isPending} className={btnBase}>
+              {isPending ? '…' : 'Trang bị (2 tay)'}
+            </button>
+          )}
+
+          {!row.equipped && isArmItem && item.hand !== 'two_hand' && (
+            <>
+              <button onClick={() => equip(row, 'l_arm')} disabled={isPending} className={btnBase}>
+                {isPending ? '…' : 'Trái'}
+              </button>
+              <button onClick={() => equip(row, 'r_arm')} disabled={isPending} className={btnBase}>
+                {isPending ? '…' : 'Phải'}
+              </button>
+            </>
+          )}
+
+          {!row.equipped && isRingItem && (
+            <>
+              <button onClick={() => equip(row, 'ring_1')} disabled={isPending} className={btnBase}>
+                {isPending ? '…' : 'Nhẫn 1'}
+              </button>
+              <button onClick={() => equip(row, 'ring_2')} disabled={isPending} className={btnBase}>
+                {isPending ? '…' : 'Nhẫn 2'}
+              </button>
+            </>
+          )}
+
+          {item.type === 'consumable' && (() => {
+            const isApPotion = item.restore_ap > 0
+            const isFull = isApPotion ? localAp >= maxAp : localHp >= totalMaxHp
+            return (
+              <button
+                onClick={() => useItem(row)}
+                disabled={isPending || isFull}
+                className={`${ui.className} text-xs border border-[#3d5a45] text-[#8fe0b0] px-3 py-2 rounded-lg
+                  disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f2ede4] transition-colors whitespace-nowrap`}
+              >
+                {isPending ? '…' : isFull ? (isApPotion ? 'AP đầy' : 'HP đầy') : 'Dùng'}
+              </button>
+            )
+          })()}
+        </div>
+        )}
+
+        {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'enchant' && (
+          <EnchantPanel
+            row={row}
+            chain={materialChain}
+            countOf={countOf}
+            gold={localGold}
+            pending={isPending}
+            onEnchant={() => enchant(row)}
+          />
+        )}
+        {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'convert' && (
+          <ConvertPanel
+            row={row}
+            chain={materialChain}
+            gold={localGold}
+            pending={isPending}
+            onConvert={(mode, times) => convert(row, mode, times)}
+          />
+        )}
+        {actionMsg?.rowId === row.id && (
+          <p className={`${ui.className} basis-full text-xs ${actionMsg.ok ? 'text-[#8fe0b0]' : 'text-[#e09595]'}`}>
+            {actionMsg.text}
+          </p>
+        )}
       </div>
     )
   }
@@ -706,8 +1041,10 @@ export default function InventoryManager({
       {tab === 'equip' && autoMsg && <p className={`${ui.className} text-xs text-[#8fe0b0]`}>{autoMsg}</p>}
 
       {tab === 'equip' && (
+      // Màn rộng: paper doll bên trái, chi tiết món đang chọn bên phải
+      <div className="grid gap-4 md:grid-cols-2 md:items-start">
       <section>
-        <div className="rounded-lg border border-[#2a2533] bg-[#0b0a10] p-4 sm:p-5">
+        <div className="rounded-2xl border border-white/[0.09] bg-white/[0.03] p-4 sm:p-5">
           {/* max-w-md: trên màn rộng không để 2 cột ô trang bị dạt ra 2 mép */}
           <div className="mx-auto max-w-md flex items-stretch justify-center gap-2 sm:gap-4">
             <div className="flex flex-col gap-2">
@@ -749,6 +1086,17 @@ export default function InventoryManager({
           </div>
         </div>
       </section>
+      {listRows.length > 0 && (() => {
+        const focusRow = rows.find((r) => r.id === focusId && r.equipped)
+        return focusRow ? (
+          renderRow(focusRow)
+        ) : (
+          <p className={`${ui.className} rounded-2xl border border-dashed border-white/10 p-6 text-center text-xs text-[#7d7a8c]`}>
+            Chạm vào một ô trang bị để xem chi tiết, cường hoá hoặc gỡ.
+          </p>
+        )
+      })()}
+      </div>
       )}
 
       {tab === 'equip' && listRows.length === 0 && (
@@ -864,281 +1212,44 @@ export default function InventoryManager({
         </div>
       )}
 
-      {tab !== 'craft' && groups.map((group) => (
-        <section key={group.key}>
-          <button
-            type="button"
-            onClick={() =>
-              setCollapsed((c) => {
-                const next = new Set(c)
-                if (next.has(group.key)) next.delete(group.key)
-                else next.add(group.key)
-                return next
-              })
-            }
-            className={`${ui.className} flex w-full items-center gap-2 mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3] hover:text-white`}
-            aria-expanded={!collapsed.has(group.key)}
-          >
-            <span aria-hidden>{group.icon}</span>
-            {group.label.toUpperCase()}
-            <span className="font-normal tracking-normal text-[#7d7a8c]">{group.rows.length}</span>
-            <span className="ml-auto text-[#7d7a8c]" aria-hidden>
-              {collapsed.has(group.key) ? '▸' : '▾'}
-            </span>
-          </button>
-
-          {!collapsed.has(group.key) && (
-          <div className="space-y-3">
-            {group.rows.map((row) => {
-              const item = row.items
-              const isPending = pendingRowId === row.id
-              const tier = tierOf(row)
-              const rarityClass = RARITY_COLOR[tier] ?? RARITY_COLOR.common
-              const isArmItem = item.slot === 'weapon' || item.slot === 'shield'
-              const isRingItem = item.slot === 'ring'
-              const isSingleSlot = !!item.slot && !isArmItem && !isRingItem
-              const btnBase = `${ui.className} text-xs border border-[#8a8499] text-[#f2ede4] px-3 py-2 rounded-lg
-                disabled:opacity-30 hover:bg-[#8a8499] hover:text-[#0e0c13] transition-colors whitespace-nowrap`
-              const hasAffix = row.rolled_crit > 0 || row.rolled_lifesteal > 0
-
-              return (
-                <div
-                  key={row.id}
-                  onClick={sellMode && !row.equipped && !row.locked ? () => toggleRow(row.id) : undefined}
-                  className={`rounded-2xl border p-4 flex flex-wrap items-center justify-between gap-3
-                    ${sellMode && selected.has(row.id)
-                      ? 'border-[#e0b050]/70 bg-[#221c10]'
-                      : row.equipped ? 'border-[#8fe0b0]/45 bg-[#8fe0b0]/[0.07]' : 'border-white/[0.09] bg-white/[0.045]'}
-                    ${sellMode && !row.equipped && !row.locked ? 'cursor-pointer' : ''}
-                    ${sellMode && (row.equipped || row.locked) ? 'opacity-40' : ''}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1 basis-56">
-                    {sellMode && (
-                      <input
-                        type="checkbox"
-                        aria-label={`Chọn bán ${item.name}`}
-                        checked={selected.has(row.id)}
-                        disabled={row.equipped || row.locked}
-                        onChange={() => toggleRow(row.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="accent-[#e0b050] w-4 h-4 shrink-0"
-                      />
-                    )}
-                    {item.icon && (
-                      <div
-                        className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common}
-                          bg-[#0b0a10] flex items-center justify-center shrink-0`}
-                      >
-                        <img
-                          src={`/items/${item.icon}`}
-                          alt=""
-                          className="w-8 h-8"
-                          style={{ imageRendering: 'pixelated' }}
-                        />
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className={rarityClass}>
-                        {(item.type === 'weapon' || item.type === 'armor') && (
-                          <span className={`${ui.className} block text-xs tracking-widest`}>
-                            {RARITY_LABEL[tier]?.toUpperCase()}
-                          </span>
-                        )}
-                        {item.name}
-                        {row.enchant_level > 0 && (
-                          <span className={`${ui.className} text-sm text-[#e0b050]`}> +{row.enchant_level}</span>
-                        )}
-                        {row.locked && <span className="text-xs"> 🔒</span>}
-                        {row.equipped && (
-                          <span className={`${ui.className} ml-1.5 whitespace-nowrap rounded-lg border border-[#8fe0b0]/60 bg-[#8fe0b0]/15 px-1.5 text-xs text-[#c8f5dc]`}>
-                            ✓ Đang mặc{row.equip_slot && EQUIP_SLOT_LABEL[row.equip_slot] ? ` · ${EQUIP_SLOT_LABEL[row.equip_slot]}` : ''}
-                          </span>
-                        )}
-                        {isUpgrade(row) && (
-                          <span className={`${ui.className} ml-1.5 text-xs text-[#8fe0b0] border border-[#8fe0b0]/50 rounded-lg px-1`}>
-                            ▲ Mạnh hơn
-                          </span>
-                        )}
-                        {row.quantity > 1 && (
-                          <span className={`${ui.className} text-xs text-[#5c5470]`}> ×{row.quantity}</span>
-                        )}
-                      </p>
-                      {item.description && (
-                        <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
-                          {item.description}
-                        </p>
-                      )}
-                      <p className={`${ui.className} text-xs text-[#5c5470] mt-1`}>
-                        {item.type === 'weapon' &&
-                          `+${item.bonus_atk + row.rolled_atk} ATK${item.hand === 'two_hand' ? ' · 2 tay' : ''}${item.school === 'magic' ? ' · Phép' : ''}`}
-                        {item.type === 'armor' &&
-                          [
-                            item.bonus_atk + row.rolled_atk ? `+${item.bonus_atk + row.rolled_atk} ATK` : null,
-                            item.bonus_def + row.rolled_def ? `+${item.bonus_def + row.rolled_def} DEF` : null,
-                            item.bonus_hp + row.rolled_hp ? `+${item.bonus_hp + row.rolled_hp} HP` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        {item.type === 'consumable' &&
-                          (item.restore_ap > 0 ? `Hồi ${item.restore_ap} AP` : `Hồi ${item.heal_amount} HP`)}
-                        {item.type === 'material' && item.sell_price != null && `Bán được ${item.sell_price} vàng`}
-                      </p>
-                      {hasAffix && (
-                        <p className={`${ui.className} text-xs text-[#e0b050] mt-0.5`}>
-                          {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
-                          {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
-                          {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
-                        </p>
-                      )}
-                      {Object.keys(row.rolled_extra ?? {}).length > 0 && (
-                        <p className={`${ui.className} text-xs text-[#8fc4e0] mt-0.5`}>
-                          {Object.entries(row.rolled_extra ?? {})
-                            .filter(([k]) => EXTRA_AFFIX[k])
-                            .map(([k, v]) => EXTRA_AFFIX[k].label(v))
-                            .join(' · ')}
-                        </p>
-                      )}
-                      {row.legendary_effect && LEGENDARY_EFFECTS[row.legendary_effect] && (
-                        <p className={`${ui.className} text-xs text-[#f0c060] mt-0.5`}>
-                          ✦ {LEGENDARY_EFFECTS[row.legendary_effect].name}
-                          <span className="text-[#a29fb3]"> — {LEGENDARY_EFFECTS[row.legendary_effect].description}</span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {sellMode ? (
-                    <span className={`${ui.className} text-xs shrink-0 ${row.equipped ? 'text-[#5c5470]' : 'text-[#e0b050]'}`}>
-                      {row.equipped ? 'Đang mặc' : row.locked ? 'Đã khóa' : `${sellPriceOf(row)} vàng`}
-                    </span>
-                  ) : (
-                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2 max-w-full">
-                    <button
-                      onClick={() => toggleLock(row)}
-                      disabled={isPending}
-                      title={row.locked ? 'Mở khóa' : 'Khóa — không bán được'}
-                      aria-label={row.locked ? 'Mở khóa' : 'Khóa'}
-                      className={`${ui.className} text-xs border px-2 py-2 rounded-lg disabled:opacity-30 ${
-                        row.locked
-                          ? 'border-[#e0b050]/70 bg-[#e0b050]/15 text-[#e0b050]'
-                          : 'border-[#2a2533] opacity-50 hover:opacity-100 hover:border-[#8a8499]'
-                      }`}
-                    >
-                      {row.locked ? '🔒 Khóa' : '🔓'}
-                    </button>
-
-                    {(item.type === 'weapon' || item.type === 'armor') && (
-                      <button
-                        onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'enchant' ? null : { rowId: row.id, kind: 'enchant' }))}
-                        disabled={row.enchant_level >= 5}
-                        className={`${ui.className} text-xs border border-[#e0b050]/50 text-[#e0b050] px-2.5 py-2 rounded-lg disabled:opacity-30 hover:bg-[#e0b050]/10 whitespace-nowrap`}
-                      >
-                        {row.enchant_level >= 5 ? '🔨 Max' : '🔨 Cường hóa'}
-                      </button>
-                    )}
-
-                    {item.type === 'material' && item.material_tier != null && (
-                      <button
-                        onClick={() => setOpenPanel((p) => (p?.rowId === row.id && p.kind === 'convert' ? null : { rowId: row.id, kind: 'convert' }))}
-                        className={`${ui.className} text-xs border border-[#8fb4c4]/50 text-[#8fb4c4] px-2.5 py-2 rounded-lg hover:bg-[#8fb4c4]/10 whitespace-nowrap`}
-                      >
-                        ⇅ Rã / Ghép
-                      </button>
-                    )}
-
-                    {row.equipped && (
-                      <button
-                        onClick={() => unequip(row)}
-                        disabled={isPending}
-                        className={`${ui.className} text-xs border border-[#8c3f3f] text-[#e09595] px-3 py-2 rounded-lg
-                          disabled:opacity-30 hover:bg-[#8c3f3f] hover:text-[#f2ede4] transition-colors whitespace-nowrap`}
-                      >
-                        {isPending ? '…' : 'Gỡ'}
-                      </button>
-                    )}
-
-                    {!row.equipped && isSingleSlot && (
-                      <button onClick={() => equip(row, item.slot!)} disabled={isPending} className={btnBase}>
-                        {isPending ? '…' : 'Trang bị'}
-                      </button>
-                    )}
-
-                    {!row.equipped && isArmItem && item.hand === 'two_hand' && (
-                      <button onClick={() => equip(row, 'both_arms')} disabled={isPending} className={btnBase}>
-                        {isPending ? '…' : 'Trang bị (2 tay)'}
-                      </button>
-                    )}
-
-                    {!row.equipped && isArmItem && item.hand !== 'two_hand' && (
-                      <>
-                        <button onClick={() => equip(row, 'l_arm')} disabled={isPending} className={btnBase}>
-                          {isPending ? '…' : 'Trái'}
-                        </button>
-                        <button onClick={() => equip(row, 'r_arm')} disabled={isPending} className={btnBase}>
-                          {isPending ? '…' : 'Phải'}
-                        </button>
-                      </>
-                    )}
-
-                    {!row.equipped && isRingItem && (
-                      <>
-                        <button onClick={() => equip(row, 'ring_1')} disabled={isPending} className={btnBase}>
-                          {isPending ? '…' : 'Nhẫn 1'}
-                        </button>
-                        <button onClick={() => equip(row, 'ring_2')} disabled={isPending} className={btnBase}>
-                          {isPending ? '…' : 'Nhẫn 2'}
-                        </button>
-                      </>
-                    )}
-
-                    {item.type === 'consumable' && (() => {
-                      const isApPotion = item.restore_ap > 0
-                      const isFull = isApPotion ? localAp >= maxAp : localHp >= totalMaxHp
-                      return (
-                        <button
-                          onClick={() => useItem(row)}
-                          disabled={isPending || isFull}
-                          className={`${ui.className} text-xs border border-[#3d5a45] text-[#8fe0b0] px-3 py-2 rounded-lg
-                            disabled:opacity-30 hover:bg-[#3d5a45] hover:text-[#f2ede4] transition-colors whitespace-nowrap`}
-                        >
-                          {isPending ? '…' : isFull ? (isApPotion ? 'AP đầy' : 'HP đầy') : 'Dùng'}
-                        </button>
-                      )
-                    })()}
-                  </div>
-                  )}
-
-                  {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'enchant' && (
-                    <EnchantPanel
-                      row={row}
-                      chain={materialChain}
-                      countOf={countOf}
-                      gold={localGold}
-                      pending={isPending}
-                      onEnchant={() => enchant(row)}
-                    />
-                  )}
-                  {!sellMode && openPanel?.rowId === row.id && openPanel.kind === 'convert' && (
-                    <ConvertPanel
-                      row={row}
-                      chain={materialChain}
-                      gold={localGold}
-                      pending={isPending}
-                      onConvert={(mode, times) => convert(row, mode, times)}
-                    />
-                  )}
-                  {actionMsg?.rowId === row.id && (
-                    <p className={`${ui.className} basis-full text-xs ${actionMsg.ok ? 'text-[#8fe0b0]' : 'text-[#e09595]'}`}>
-                      {actionMsg.text}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+      {tab === 'bag' && (
+        <>
+          {wornTiles.length > 0 && (
+            <section>
+              <h2 className={`${ui.className} mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3]`}>
+                ĐANG MẶC <span className="font-normal tracking-normal text-[#7d7a8c]">{wornTiles.length}</span>
+              </h2>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{wornTiles.map(renderTile)}</div>
+            </section>
           )}
-        </section>
-      ))}
+          {bagTiles.length > 0 && (
+            <section>
+              <h2 className={`${ui.className} mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3]`}>
+                TRONG TÚI <span className="font-normal tracking-normal text-[#7d7a8c]">{bagTiles.length}</span>
+              </h2>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{bagTiles.map(renderTile)}</div>
+            </section>
+          )}
+        </>
+      )}
+
+      {/* Chi tiết 1 món: đủ nút trang bị / cường hoá / khoá / dùng */}
+      {tab === 'bag' && detailRow && !sellMode && (
+        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true">
+          <button type="button" aria-label="Đóng" onClick={() => setDetailId(null)} className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#110f17] p-2 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setDetailId(null)}
+              aria-label="Đóng"
+              className="absolute right-3 top-3 z-10 h-8 w-8 rounded-full bg-white/10 text-[#c9c4d4] hover:bg-white/20"
+            >
+              ✕
+            </button>
+            {renderRow(detailRow)}
+          </div>
+        </div>
+      )}
 
       {sellMode && selected.size > 0 && (
         <div className={`${ui.className} sticky bottom-24 z-10 rounded-lg border border-[#e0b050]/60 bg-[#1a150c]/95 backdrop-blur p-3 flex items-center justify-between gap-3`}>
