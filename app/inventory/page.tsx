@@ -75,7 +75,7 @@ export default async function InventoryPage({
       .map((ing: any) => ({ item: ing.item, quantity: ing.quantity })),
   }))
 
-  const cls = character.classes as { icon: string | null }
+  const cls = character.classes as { key: string; icon: string | null }
   // base* = class + cấp + điểm chỉ số, chưa cộng trang bị — InventoryManager
   // tự cộng thêm phản ứng theo state trang bị hiện tại (kể cả affix roll) để
   // cập nhật ngay khi mặc/gỡ đồ mà không cần tải lại trang.
@@ -94,6 +94,8 @@ export default async function InventoryPage({
         characterId={character.id}
         characterName={character.name}
         classIcon={cls.icon}
+        classKey={cls.key}
+        portrait={character.portrait}
         items={(inventory as any) ?? []}
         currentHp={currentHp}
         baseMaxHp={baseMaxHp}

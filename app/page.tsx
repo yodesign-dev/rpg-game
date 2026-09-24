@@ -4,7 +4,8 @@ import { display, ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/server'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
-import ClassArt from './ClassArt'
+import Portrait from './components/Portrait'
+import PortraitPicker from './hub/PortraitPicker'
 import SettingsMenu from './SettingsMenu'
 import BottomNav from './BottomNav'
 import StatAllocator from './StatAllocator'
@@ -102,14 +103,16 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
         <header className="sticky top-0 z-20 -mx-4 px-4 pt-4 pb-3 bg-[#07070a]/85 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="relative w-14 h-14 shrink-0">
-              <div
-                className="absolute inset-0 rounded-full p-[2px]"
-                style={{ background: 'linear-gradient(135deg,#b06fd8,#6b4a7a 60%,#3a2a48)' }}
-              >
-                <div className="w-full h-full rounded-full bg-[#16121c] flex items-center justify-center">
-                  <ClassArt classKey={cls.key} seed={character.id} size={36} />
+              <PortraitPicker characterId={character.id} classKey={cls.key} portrait={character.portrait}>
+                <div
+                  className="absolute inset-0 rounded-full p-[2px]"
+                  style={{ background: 'linear-gradient(135deg,#b06fd8,#6b4a7a 60%,#3a2a48)' }}
+                >
+                  <div className="w-full h-full rounded-full bg-[#16121c] overflow-hidden flex items-start justify-center">
+                    <Portrait classKey={cls.key} portrait={character.portrait} variant="bust" />
+                  </div>
                 </div>
-              </div>
+              </PortraitPicker>
               <div
                 className="absolute -right-1 -bottom-1 bg-[#1c1526] border-2 border-[#b06fd8] rounded-full px-1.5 text-xs font-bold text-[#e3caf5]"
               >

@@ -1982,10 +1982,10 @@ begin
       new.last_ap_update := now();
       new.last_hp_update := now();
       new.created_at := now();
-    elsif (to_jsonb(new) - 'name' - 'auto_allocate_stats')
+    elsif (to_jsonb(new) - 'name' - 'auto_allocate_stats' - 'portrait')
           is distinct from
-          (to_jsonb(old) - 'name' - 'auto_allocate_stats') then
-      raise exception 'Chỉ được đổi tên và chế độ tự cộng điểm; chỉ số nhân vật chỉ thay đổi qua hành động trong game';
+          (to_jsonb(old) - 'name' - 'auto_allocate_stats' - 'portrait') then
+      raise exception 'Chỉ được đổi tên, chân dung và chế độ tự cộng điểm; chỉ số nhân vật chỉ thay đổi qua hành động trong game';
     end if;
   end if;
   return new;
@@ -4613,3 +4613,9 @@ begin
   return v || jsonb_build_object('kit', get_skill_kit(p_character_id));
 end;
 $$;
+
+-- Chân dung nhân vật (public/portraits/<class>_<n>.png)
+alter table characters add column if not exists portrait text;
+alter table characters drop constraint if exists characters_portrait_format;
+alter table characters
+  add constraint characters_portrait_format check (portrait ~ '^(warrior|mage|archer|assassin)_([1-9]|10)$');

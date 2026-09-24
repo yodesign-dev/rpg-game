@@ -20,6 +20,9 @@ export default async function ClassesPage() {
           <ClassCard key={c.key} c={c} highlight={c.key === myClass} />
         ))}
       </div>
+      <p className="mt-6 text-xs text-[#7d7a8c]">
+        Chân dung nhân vật: &ldquo;500+ Free Pixel-art Fantasy Character Pack&rdquo; của Batareya (itch.io).
+      </p>
     </GlassPage>
   )
 }
