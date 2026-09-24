@@ -736,7 +736,7 @@ $$;
 -- item (vd. kiếm không bao giờ roll được 'mag atk' vì đó là pool riêng của
 -- weapon school='magic'). Số lượng roll và biên độ tăng theo rarity.
 create or replace function public.roll_item_affixes(p_slot text, p_school text, p_rarity text)
-returns table(roll_atk int, roll_def int, roll_hp int, roll_crit numeric, roll_lifesteal numeric)
+returns table(roll_atk int, roll_def int, roll_hp int, roll_crit numeric, roll_lifesteal numeric, roll_extra jsonb)
 language plpgsql
 as $$
 declare
@@ -747,6 +747,8 @@ declare
   v_stat text;
   v_atk int := 0; v_def int := 0; v_hp int := 0;
   v_crit numeric := 0; v_lifesteal numeric := 0;
+  v_extra jsonb := '{}'::jsonb;
+  v_pct numeric;
   i int;
 begin
   case p_rarity
@@ -756,21 +758,30 @@ begin
     else                  v_roll_count := 1; v_flat_min := 1; v_flat_max := 3;  v_pct_min := 0.01; v_pct_max := 0.02;
   end case;
 
+  -- Dòng tiện ích (pierce, double, dmg_red, regen, skill_dmg) chiếm ~1/3 pool; chỉ số thô
+  -- lặp 2 lần để vẫn là dòng hay gặp nhất
   v_pool := case
-    when p_slot = 'weapon' and p_school = 'magic' then array['atk', 'lifesteal']
-    when p_slot = 'weapon' then array['atk', 'crit', 'lifesteal']
-    when p_slot in ('amulet', 'ring') then array['atk', 'def', 'hp', 'crit', 'lifesteal']
-    when p_slot in ('shield', 'head', 'chest', 'belt', 'boot') then array['def', 'hp']
+    when p_slot = 'weapon' and p_school = 'magic' then
+      array['atk', 'atk', 'lifesteal', 'pierce', 'skill_dmg']
+    when p_slot = 'weapon' then
+      array['atk', 'atk', 'crit', 'crit', 'lifesteal', 'pierce', 'double', 'skill_dmg']
+    when p_slot in ('amulet', 'ring') then
+      array['atk', 'def', 'hp', 'crit', 'lifesteal', 'atk', 'hp', 'crit', 'double', 'skill_dmg', 'regen']
+    when p_slot in ('shield', 'head', 'chest', 'belt', 'boot') then
+      array['def', 'hp', 'def', 'hp', 'dmg_red', 'regen']
     else null
   end;
 
   if v_pool is null then
-    return query select 0, 0, 0, 0::numeric, 0::numeric;
+    return query select 0, 0, 0, 0::numeric, 0::numeric, '{}'::jsonb;
     return;
   end if;
 
   for i in 1..v_roll_count loop
     v_stat := v_pool[1 + floor(random() * array_length(v_pool, 1))::int];
+    -- Mỗi dòng tiện ích tối đa 1 lần / món; trùng thì thành chỉ số thô đầu pool
+    if v_extra ? v_stat then v_stat := v_pool[1]; end if;
+    v_pct := v_pct_min + random() * (v_pct_max - v_pct_min);
     if v_stat = 'atk' then
       v_atk := v_atk + (v_flat_min + floor(random() * (v_flat_max - v_flat_min + 1)))::int;
     elsif v_stat = 'def' then
@@ -778,13 +789,19 @@ begin
     elsif v_stat = 'hp' then
       v_hp := v_hp + ((v_flat_min + floor(random() * (v_flat_max - v_flat_min + 1))) * 3)::int;
     elsif v_stat = 'crit' then
-      v_crit := v_crit + round((v_pct_min + random() * (v_pct_max - v_pct_min))::numeric, 4);
+      v_crit := v_crit + round(v_pct::numeric, 4);
     elsif v_stat = 'lifesteal' then
-      v_lifesteal := v_lifesteal + round((v_pct_min + random() * (v_pct_max - v_pct_min))::numeric, 4);
+      v_lifesteal := v_lifesteal + round(v_pct::numeric, 4);
+    else
+      -- Tiện ích: pierce/skill_dmg ×2, double/dmg_red ×0.8, regen ×0.15 so với dải % của tier
+      v_pct := round((v_pct * case v_stat when 'pierce' then 2 when 'skill_dmg' then 2
+                                          when 'regen' then 0.15 else 0.8 end)::numeric, 4);
+      v_extra := jsonb_set(v_extra, array[v_stat],
+        to_jsonb(coalesce((v_extra->>v_stat)::numeric, 0) + v_pct));
     end if;
   end loop;
 
-  return query select v_atk, v_def, v_hp, v_crit, v_lifesteal;
+  return query select v_atk, v_def, v_hp, v_crit, v_lifesteal, v_extra;
 end;
 $$;
 
@@ -901,6 +918,11 @@ declare
   v_dot_dmg int := 0; v_dot_left int := 0; v_dot_name text; v_tick int;
   v_stunned boolean := false;   -- quái bị đóng băng: mất lượt đánh kế
   v_chill boolean := false;     -- quái vừa mất lượt vì đóng băng (Băng Vỡ đánh mạnh hơn)
+  v_stun_count int := 0;        -- đóng băng giảm dần: lần 2 tỉ lệ ×0.5, tối đa 2 lần/trận
+  -- Dòng tiện ích trang bị (combat_mods)
+  v_regen numeric := least(0.03, coalesce((p_mods->>'regen')::numeric, 0));
+  v_skill_dmg numeric := least(0.5, coalesce((p_mods->>'skill_dmg')::numeric, 0));
+  v_gear_red numeric := least(0.25, coalesce((p_mods->>'gear_dmg_red')::numeric, 0));
 begin
   -- Bị động "Sát Thương Chí Mạng" cộng thẳng vào hệ số chí mạng
   v_crit_mult := v_crit_mult + coalesce((v_kit->>'crit_damage')::numeric, 0);
@@ -936,7 +958,7 @@ begin
         v_sk := v_kit->'actives'->(v_best - 1);
         v_eff := coalesce(v_sk->'effect', '{}'::jsonb);
         v_skill_name := v_sk->>'name';
-        v_skill_power := v_best_score / coalesce((v_eff->>'hits')::numeric, 1);
+        v_skill_power := v_best_score / coalesce((v_eff->>'hits')::numeric, 1) * (1 + v_skill_dmg);
         v_cds[v_best] := coalesce((v_sk->>'cooldown')::int, 0);
       else
         v_eff := '{}'::jsonb;
@@ -952,6 +974,11 @@ begin
 
     -- Phong Hầu: +x% ATK/DEF mỗi lượt đã qua (tối đa 10); Cuồng Huyết: ATK tăng dần khi HP
     -- tụt từ 100% xuống 40%
+    -- Hồi HP mỗi lượt (dòng tiện ích trang bị)
+    if v_regen > 0 and v_turn > 1 then
+      v_char_hp := least(p_max_hp, v_char_hp + greatest(1, round(p_max_hp * v_regen))::int);
+    end if;
+
     v_stack := least(10, v_turn - 1) * v_prestige;
     v_atk_now := p_char_atk * (1 + v_stack
       + v_rage * least(1, greatest(0, (1 - v_char_hp::numeric / greatest(1, p_max_hp)) / 0.6)));
@@ -982,9 +1009,9 @@ begin
       end if;
 
       -- Hiệu ứng chỉ áp ở đòn đầu của skill: đóng băng, độc/thiêu
-      v_stun_now := v_hit = 1 and coalesce((v_eff->>'stun')::numeric, 0) > 0
-                    and random() < (v_eff->>'stun')::numeric;
-      if v_stun_now then v_stunned := true; end if;
+      v_stun_now := v_hit = 1 and coalesce((v_eff->>'stun')::numeric, 0) > 0 and v_stun_count < 2
+                    and random() < (v_eff->>'stun')::numeric * power(0.5, v_stun_count);
+      if v_stun_now then v_stunned := true; v_stun_count := v_stun_count + 1; end if;
       if v_hit = 1 and coalesce((v_eff->>'dot')::numeric, 0) > 0 then
         v_dot_dmg := greatest(1, round(v_atk_now * (v_eff->>'dot')::numeric))::int;
         v_dot_left := coalesce((v_eff->>'dot_turns')::int, 2);
@@ -1059,7 +1086,7 @@ begin
     -- Trụ Cột: mỗi lần trúng đòn trước đó +x% giảm sát thương (tối đa 3), chung trần 60%
     v_enemy_dmg := greatest(1, p_enemy_atk - v_def_now, p_enemy_atk * 0.15)
                    * p_damage_multiplier
-                   * (1 - least(0.6, p_dmg_reduction + least(3, v_guard_hits) * v_guard_step)) * v_guardian;
+                   * (1 - least(0.6, p_dmg_reduction + v_gear_red + least(3, v_guard_hits) * v_guard_step)) * v_guardian;
     v_enemy_hit := round(v_enemy_dmg);
     v_char_hp := greatest(0, v_char_hp - v_enemy_hit);
     v_dmg_taken := v_dmg_taken + v_enemy_hit;
@@ -1184,7 +1211,7 @@ returns numeric
 language sql
 immutable
 as $$
-  select case p_rarity when 'legendary' then 2.0 when 'epic' then 1.6 when 'rare' then 1.25 else 1.0 end;
+  select case p_rarity when 'legendary' then 1.8 when 'epic' then 1.6 when 'rare' then 1.25 else 1.0 end;
 $$;
 
 -- Quay tier cho 1 món trang bị. p_table: 'normal' (quái thường), 'boss',
@@ -1227,6 +1254,7 @@ declare
   v_slot text; v_school text; v_bonus_atk int; v_bonus_def int; v_bonus_hp int;
   v_mult numeric := rarity_multiplier(p_rarity);
   v_roll_atk int; v_roll_def int; v_roll_hp int; v_roll_crit numeric; v_roll_lifesteal numeric;
+  v_roll_extra jsonb; v_utility int;
   v_effect text;
   v_item_name text; v_item_key text; v_item_icon text;
 begin
@@ -1234,21 +1262,25 @@ begin
     into v_slot, v_school, v_bonus_atk, v_bonus_def, v_bonus_hp
   from items i where i.id = p_item_id;
 
-  select a.roll_atk, a.roll_def, a.roll_hp, a.roll_crit, a.roll_lifesteal
-    into v_roll_atk, v_roll_def, v_roll_hp, v_roll_crit, v_roll_lifesteal
+  select a.roll_atk, a.roll_def, a.roll_hp, a.roll_crit, a.roll_lifesteal, a.roll_extra
+    into v_roll_atk, v_roll_def, v_roll_hp, v_roll_crit, v_roll_lifesteal, v_roll_extra
   from roll_item_affixes(v_slot, v_school, p_rarity) a;
+
+  -- Ngân sách sức mạnh: mỗi dòng tiện ích trừ 8% chỉ số gốc của món
+  select count(*) into v_utility from jsonb_object_keys(v_roll_extra);
+  v_mult := v_mult - 0.08 * v_utility;
 
   if p_rarity = 'legendary' then
     v_effect := roll_legendary_effect();
   end if;
 
-  insert into inventory (character_id, item_id, quantity, rarity, legendary_effect, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal)
+  insert into inventory (character_id, item_id, quantity, rarity, legendary_effect, rolled_atk, rolled_def, rolled_hp, rolled_crit, rolled_lifesteal, rolled_extra)
   values (
     p_character_id, p_item_id, 1, p_rarity, v_effect,
     v_roll_atk + round(v_bonus_atk * (v_mult - 1)),
     v_roll_def + round(v_bonus_def * (v_mult - 1)),
     v_roll_hp + round(v_bonus_hp * (v_mult - 1)),
-    v_roll_crit, v_roll_lifesteal
+    v_roll_crit, v_roll_lifesteal, v_roll_extra
   );
 
   -- Đồ Huyền Thoại (rơi hoặc chế tạo) lên bảng tin + đếm cho danh hiệu
@@ -2406,7 +2438,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
-  v_mods := get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id));
+  v_mods := combat_mods(p_character_id);
 
   select exists (select 1 from zone_enemies ze where ze.zone_id = p_zone_id and ze.is_boss)
     into v_has_boss;
@@ -3247,7 +3279,7 @@ begin
     least(0.75, v_crit + v_skill_crit), 0, 0,
     v_a1_name, v_a1_power, v_a2_name, v_a2_power,
     'Nộm Tập', 2000000000, 0, v_def,
-    1, true, v_effects, get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id))
+    1, true, v_effects, combat_mods(p_character_id)
   ) f;
 
   select coalesce(jsonb_agg(e), '[]'::jsonb) into v_hits
@@ -3587,7 +3619,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
-  v_mods := get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id));
+  v_mods := combat_mods(p_character_id);
 
   v_ap := v_current_ap;
   v_was_full_ap := (v_current_ap >= v_max_ap);
@@ -3948,6 +3980,11 @@ as $$
        + (i.bonus_def + inv.rolled_def) * 1.5
        + (i.bonus_hp + inv.rolled_hp) * 0.25
        + (inv.rolled_crit + inv.rolled_lifesteal) * 400
+       + coalesce((inv.rolled_extra->>'pierce')::numeric, 0) * 150
+       + coalesce((inv.rolled_extra->>'double')::numeric, 0) * 300
+       + coalesce((inv.rolled_extra->>'dmg_red')::numeric, 0) * 500
+       + coalesce((inv.rolled_extra->>'regen')::numeric, 0) * 800
+       + coalesce((inv.rolled_extra->>'skill_dmg')::numeric, 0) * 200
        + case when inv.legendary_effect is not null then 60 else 0 end
   from inventory inv join items i on i.id = inv.item_id
   where inv.id = p_inventory_id;
@@ -4531,3 +4568,48 @@ join recipes r on r.key = ing.recipe_key
 join items i on i.key = ing.item_key
 on conflict (recipe_id, item_id) do nothing;
 
+-- ============================================================================
+-- DÒNG TIỆN ÍCH TRANG BỊ + GỘP CHỈ SỐ VÒNG ĐÁNH
+-- ============================================================================
+
+alter table inventory add column if not exists rolled_extra jsonb not null default '{}'::jsonb;
+
+-- Tổng dòng tiện ích của đồ đang mặc
+create or replace function public.get_gear_mods(p_character_id uuid)
+returns jsonb
+language sql
+stable
+set search_path = 'public'
+as $$
+  select coalesce(jsonb_object_agg(e.key, e.total), '{}'::jsonb)
+  from (
+    select x.key, sum(x.value::text::numeric) as total
+    from inventory inv cross join lateral jsonb_each(inv.rolled_extra) x
+    where inv.character_id = p_character_id and inv.equipped
+    group by x.key
+  ) e;
+$$;
+
+-- Mọi thứ vòng đánh cần ngoài chỉ số: thiên phú + dòng tiện ích trang bị (cộng dồn) + bộ kỹ năng.
+-- dmg_red của đồ đi riêng (gear_dmg_red) vì dmg_red thiên phú đã gộp ở get_combat_skills.
+create or replace function public.combat_mods(p_character_id uuid)
+returns jsonb
+language plpgsql
+stable
+set search_path = 'public'
+as $$
+declare
+  v jsonb := get_talent_totals(p_character_id);
+  g jsonb := get_gear_mods(p_character_id);
+  k text;
+begin
+  for k in select jsonb_object_keys(g) loop
+    if k = 'dmg_red' then
+      v := v || jsonb_build_object('gear_dmg_red', (g->>k)::numeric);
+    else
+      v := v || jsonb_build_object(k, coalesce((v->>k)::numeric, 0) + (g->>k)::numeric);
+    end if;
+  end loop;
+  return v || jsonb_build_object('kit', get_skill_kit(p_character_id));
+end;
+$$;

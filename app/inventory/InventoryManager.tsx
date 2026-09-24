@@ -45,6 +45,15 @@ function sellPriceOf(row: InventoryRow) {
 }
 
 // Điểm 1 món — cùng trọng số với inventory_item_score / character_power ở server
+// Dòng tiện ích (rolled_extra): nhãn + trọng số điểm — khớp inventory_item_score
+const EXTRA_AFFIX: Record<string, { label: (v: number) => string; weight: number }> = {
+  pierce: { label: (v) => `Xuyên ${(v * 100).toFixed(1)}% DEF`, weight: 150 },
+  double: { label: (v) => `+${(v * 100).toFixed(1)}% Đòn Kép`, weight: 300 },
+  dmg_red: { label: (v) => `−${(v * 100).toFixed(1)}% sát thương nhận`, weight: 500 },
+  regen: { label: (v) => `Hồi ${(v * 100).toFixed(2)}% HP mỗi lượt`, weight: 800 },
+  skill_dmg: { label: (v) => `+${(v * 100).toFixed(1)}% sát thương skill`, weight: 200 },
+}
+
 function itemScore(row: InventoryRow) {
   const it = row.items
   return (
@@ -52,6 +61,7 @@ function itemScore(row: InventoryRow) {
     (it.bonus_def + row.rolled_def) * 1.5 +
     (it.bonus_hp + row.rolled_hp) * 0.25 +
     (row.rolled_crit + row.rolled_lifesteal) * 400 +
+    Object.entries(row.rolled_extra ?? {}).reduce((sum, [k, v]) => sum + (EXTRA_AFFIX[k]?.weight ?? 0) * v, 0) +
     (row.legendary_effect ? 60 : 0)
   )
 }
@@ -164,6 +174,7 @@ type InventoryRow = {
   rolled_hp: number
   rolled_crit: number
   rolled_lifesteal: number
+  rolled_extra?: Record<string, number>
   rarity: string | null
   legendary_effect: string | null
   locked: boolean
@@ -977,6 +988,14 @@ export default function InventoryManager({
                           {row.rolled_crit > 0 && `+${(row.rolled_crit * 100).toFixed(1)}% Chí mạng`}
                           {row.rolled_crit > 0 && row.rolled_lifesteal > 0 && ' · '}
                           {row.rolled_lifesteal > 0 && `+${(row.rolled_lifesteal * 100).toFixed(1)}% Hút máu`}
+                        </p>
+                      )}
+                      {Object.keys(row.rolled_extra ?? {}).length > 0 && (
+                        <p className={`${ui.className} text-xs text-[#8fc4e0] mt-0.5`}>
+                          {Object.entries(row.rolled_extra ?? {})
+                            .filter(([k]) => EXTRA_AFFIX[k])
+                            .map(([k, v]) => EXTRA_AFFIX[k].label(v))
+                            .join(' · ')}
                         </p>
                       )}
                       {row.legendary_effect && LEGENDARY_EFFECTS[row.legendary_effect] && (
