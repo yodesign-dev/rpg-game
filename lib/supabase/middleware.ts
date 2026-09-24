@@ -31,11 +31,12 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // getUser() (chứ không phải getSession()) — vì nó xác thực lại token với server
-  // Supabase thay vì chỉ đọc cookie, tránh việc giả mạo cookie để bypass.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims() (chứ không phải getSession()) — xác thực chữ ký JWT nên không giả mạo
+  // cookie để bypass được. Với JWT signing keys bất đối xứng, nó kiểm tra tại chỗ bằng
+  // JWKS (được cache) nên không tốn một vòng mạng tới Supabase Auth mỗi lần chuyển trang
+  // như getUser(); token hết hạn vẫn được refresh + ghi cookie qua setAll ở trên.
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims ?? null
 
   const path = request.nextUrl.pathname
   const isProtected = PROTECTED_PATHS.some((p) => path.startsWith(p))

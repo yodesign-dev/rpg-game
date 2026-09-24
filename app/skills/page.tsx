@@ -1,27 +1,10 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentCharacter } from '@/lib/current-character'
 import GlassPage from '../GlassPage'
 import SkillManager from './SkillManager'
 
 
 export default async function SkillsPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: character } = await supabase
-    .from('characters')
-    .select('*, classes(*)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (!character) redirect('/create-character')
+  const { supabase, character } = await getCurrentCharacter()
 
   const [{ data: skills }, { data: equipped }] = await Promise.all([
     supabase

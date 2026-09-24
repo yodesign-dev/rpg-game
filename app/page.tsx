@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { display, ui } from '@/app/fonts'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentCharacter } from '@/lib/current-character'
 import { applyRegen } from '@/lib/regen'
 import { getCharacterStats } from '@/lib/character-stats'
 import PortraitCard from './components/PortraitCard'
@@ -12,7 +11,8 @@ import StatAllocator from './StatAllocator'
 import ActivityFeed, { type FeedEntry } from './ActivityFeed'
 import QuestBoard, { type DailyQuests } from './quests/QuestBoard'
 import TalentTree, { type TalentEdge, type TalentNode, type TalentState } from './talents/TalentTree'
-import HubTabs, { hubHref, parseHubTab } from './hub/HubTabs'
+import HubTabs, { HubLink, HubPanel } from './hub/HubTabs'
+import type { HubTab } from './hub/tabs'
 
 const CLASS_TAG: Record<string, string> = {
   warrior: 'text-[#e0a3a3] bg-[#8c3f3f]/[0.18] border-[#8c3f3f]/40',
@@ -21,29 +21,8 @@ const CLASS_TAG: Record<string, string> = {
   assassin: 'text-[#d9c3ee] bg-[#6b4a7a]/[0.18] border-[#6b4a7a]/40',
 }
 
-export default async function CharacterPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const tab = parseHubTab((await searchParams).tab)
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: character, error: characterError } = await supabase
-    .from('characters')
-    // characters ↔ titles có 2 quan hệ (title_key trực tiếp + bảng character_titles)
-    // → phải chỉ rõ khóa ngoại, nếu không PostgREST báo lỗi "more than one relationship"
-    .select('*, classes(*), title:titles!characters_title_key_fkey(name, emoji)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  // Lỗi truy vấn ≠ chưa có nhân vật — không được đẩy sang trang tạo nhân vật
-  if (characterError) throw new Error(`Không tải được nhân vật: ${characterError.message}`)
-  if (!character) redirect('/create-character')
+export default async function CharacterPage() {
+  const { supabase, character } = await getCurrentCharacter()
 
   const cls = character.classes as {
     key: string
@@ -52,28 +31,32 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
     main_stat: string
   }
 
-  // Hồi phục trước rồi mới đọc chỉ số (apply_regen ghi HP/AP mới vào DB)
-  const regen = await applyRegen(supabase, character)
+  // apply_regen chỉ ghi current_hp/current_ap, còn get_character_stats không đọc 2 cột này
+  // → chạy song song được. Tải sẵn dữ liệu cả 4 tab con để đổi tab phía client là tức thì.
+  const [
+    regen,
+    stats,
+    { data: feed },
+    { data: quests, error: questsError },
+    { data: talentState },
+    { data: zones },
+    { data: talentNodes, error: talentNodesError },
+    { data: talentEdges },
+  ] = await Promise.all([
+    applyRegen(supabase, character),
+    getCharacterStats(supabase, character.id),
+    supabase
+      .from('activity_feed')
+      .select('id, character_id, character_name, character_title, kind, payload, created_at')
+      .order('created_at', { ascending: false })
+      .limit(15),
+    supabase.rpc('get_daily_quests', { p_character_id: character.id }),
+    supabase.rpc('get_talent_state', { p_character_id: character.id }),
+    supabase.from('zones').select('name, icon, min_level').order('min_level'),
+    supabase.from('talent_nodes').select('key, name, icon, branch, kind, cost, x, y, effects, description'),
+    supabase.from('talent_edges').select('a, b'),
+  ])
   const { currentAp, nextApMinutes } = regen
-  // Nhiệm vụ + thiên phú luôn tải (cần cho số đỏ trên tab); cây thiên phú chỉ tải khi mở tab đó
-  const [stats, { data: feed }, { data: quests, error: questsError }, { data: talentState }, { data: zones }, tree] =
-    await Promise.all([
-      getCharacterStats(supabase, character.id),
-      supabase
-        .from('activity_feed')
-        .select('id, character_id, character_name, character_title, kind, payload, created_at')
-        .order('created_at', { ascending: false })
-        .limit(15),
-      supabase.rpc('get_daily_quests', { p_character_id: character.id }),
-      supabase.rpc('get_talent_state', { p_character_id: character.id }),
-      supabase.from('zones').select('name, icon, min_level').order('min_level'),
-      tab === 'talents'
-        ? Promise.all([
-            supabase.from('talent_nodes').select('key, name, icon, branch, kind, cost, x, y, effects, description'),
-            supabase.from('talent_edges').select('a, b'),
-          ])
-        : null,
-    ])
 
   const maxHp = stats.maxHp
   const currentHp = Math.min(maxHp, regen.currentHp ?? maxHp)
@@ -174,11 +157,10 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
         </header>
 
         <HubTabs
-          active={tab}
           badges={{ stats: character.stat_points, talents: talentPoints, quests: questsClaimable }}
         />
 
-        {tab === 'overview' && (
+        <HubPanel tab="overview">
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <ActionCard
@@ -198,16 +180,15 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
             </div>
 
             <SummaryRow
-              href={hubHref('quests')}
+              tab="quests"
               icon="📜"
               title="Nhiệm vụ hằng ngày"
               note={questsError ? 'Không tải được' : `Đã xong ${questsDone}/${daily?.quests.length ?? 3}`}
               badge={questsClaimable > 0 ? `Nhận ${questsClaimable} quà` : undefined}
             />
 
-            <Link
-              href={hubHref('stats')}
-              scroll={false}
+            <HubLink
+              tab="stats"
               className="block rounded-[18px] bg-white/[0.045] border border-white/[0.09] p-4 hover:bg-white/[0.07] transition-colors"
             >
               <div className="grid grid-cols-4 gap-2 text-center">
@@ -224,7 +205,7 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
                   chưa dùng →
                 </p>
               )}
-            </Link>
+            </HubLink>
 
             {/* eslint-disable-next-line react-hooks/purity -- server component: thời điểm render là "bây giờ" */}
             <ActivityFeed entries={(feed ?? []) as FeedEntry[]} myCharacterId={character.id} now={Date.now()} />
@@ -247,9 +228,9 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
               ))}
             </div>
           </div>
-        )}
+        </HubPanel>
 
-        {tab === 'stats' && (
+        <HubPanel tab="stats">
           <StatAllocator
             characterId={character.id}
             mainStat={cls.main_stat}
@@ -267,40 +248,36 @@ export default async function CharacterPage({ searchParams }: { searchParams: Pr
             gold={character.gold}
             totals={{ atk: stats.atk, def: stats.def, maxHp: stats.maxHp, crit: stats.critBonus }}
           />
-        )}
+        </HubPanel>
 
-        {tab === 'talents' && (
-          <>
-            <p className="text-sm text-[#a29fb3] mb-4">
-              Điểm mở ở cấp 6 / 14 / 22 / 30 / 50 / 65 / 75, cộng 1 điểm mỗi 25 tầng Tháp (tối đa 7). Ô lớn mở từ
-              cấp 20, ô trùm từ cấp 40. Chỉ học được ô liền kề ô đã học.
-            </p>
-            {!talentState || tree?.[0].error ? (
-              <p className="text-sm text-[#e09595]">Không tải được cây thiên phú.</p>
-            ) : (
-              <TalentTree
-                characterId={character.id}
-                nodes={(tree?.[0].data ?? []) as TalentNode[]}
-                edges={(tree?.[1].data ?? []) as TalentEdge[]}
-                initialState={talentState as TalentState}
-                gold={character.gold}
-              />
-            )}
-          </>
-        )}
+        <HubPanel tab="talents">
+          <p className="text-sm text-[#a29fb3] mb-4">
+            Điểm mở ở cấp 6 / 14 / 22 / 30 / 50 / 65 / 75, cộng 1 điểm mỗi 25 tầng Tháp (tối đa 7). Ô lớn mở từ
+            cấp 20, ô trùm từ cấp 40. Chỉ học được ô liền kề ô đã học.
+          </p>
+          {!talentState || talentNodesError ? (
+            <p className="text-sm text-[#e09595]">Không tải được cây thiên phú.</p>
+          ) : (
+            <TalentTree
+              characterId={character.id}
+              nodes={(talentNodes ?? []) as TalentNode[]}
+              edges={(talentEdges ?? []) as TalentEdge[]}
+              initialState={talentState as TalentState}
+              gold={character.gold}
+            />
+          )}
+        </HubPanel>
 
-        {tab === 'quests' && (
-          <>
-            <p className="text-sm text-[#a29fb3] mb-4">
-              3 nhiệm vụ mỗi ngày, làm mới lúc 0h. Làm đủ 3 để nhận quà thêm.
-            </p>
-            {questsError || !daily ? (
-              <p className="text-sm text-[#e09595]">Không tải được nhiệm vụ: {questsError?.message}</p>
-            ) : (
-              <QuestBoard characterId={character.id} initial={daily} />
-            )}
-          </>
-        )}
+        <HubPanel tab="quests">
+          <p className="text-sm text-[#a29fb3] mb-4">
+            3 nhiệm vụ mỗi ngày, làm mới lúc 0h. Làm đủ 3 để nhận quà thêm.
+          </p>
+          {questsError || !daily ? (
+            <p className="text-sm text-[#e09595]">Không tải được nhiệm vụ: {questsError?.message}</p>
+          ) : (
+            <QuestBoard characterId={character.id} initial={daily} />
+          )}
+        </HubPanel>
       </div>
 
       <BottomNav />
@@ -351,22 +328,21 @@ function ActionCard({ href, title, note, icon, tone }: { href: string; title: st
 }
 
 function SummaryRow({
-  href,
+  tab,
   icon,
   title,
   note,
   badge,
 }: {
-  href: string
+  tab: HubTab
   icon: string
   title: string
   note: string
   badge?: string
 }) {
   return (
-    <Link
-      href={href}
-      scroll={false}
+    <HubLink
+      tab={tab}
       className="flex items-center gap-3 rounded-[18px] bg-white/[0.045] border border-white/[0.09] px-4 py-3 hover:bg-white/[0.07] transition-colors"
     >
       <span className="text-xl" aria-hidden>
@@ -384,7 +360,7 @@ function SummaryRow({
       <span className="text-[#7d7a8c]" aria-hidden>
         ›
       </span>
-    </Link>
+    </HubLink>
   )
 }
 

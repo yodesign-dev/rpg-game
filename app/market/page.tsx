@@ -1,6 +1,5 @@
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentCharacter } from '@/lib/current-character'
 import GlassPage, { GoldChip } from '../GlassPage'
 import MarketManager from './MarketManager'
 import GachaMerchant, { type GachaHistory } from './GachaMerchant'
@@ -9,23 +8,7 @@ import GachaMerchant, { type GachaHistory } from './GachaMerchant'
 export default async function MarketPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab: tabParam } = await searchParams
   const tab = tabParam === 'merchant' ? 'merchant' : 'shop'
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: character } = await supabase
-    .from('characters')
-    .select('*, classes(*)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (!character) redirect('/create-character')
+  const { supabase, character } = await getCurrentCharacter()
 
   const [{ data: items }, { data: history }] = await Promise.all([
     supabase.from('items').select('*').not('buy_price', 'is', null).order('buy_price', { ascending: true }),
