@@ -210,7 +210,7 @@ create table skills (
   description      text not null,
   skill_type       text not null,                 -- active | passive
   power_multiplier numeric,                        -- dùng cho skill active (nhân vào atk)
-  effect_type      text,                           -- damage_reduction | lifesteal | crit_chance (passive)
+  effect_type      text,                           -- damage_reduction | lifesteal | crit_chance | crit_damage (passive)
   effect_value     numeric,                        -- 0..1
   unlock_level     int not null default 1,
   icon             text
@@ -843,7 +843,7 @@ create or replace function public.simulate_fight(
   p_enemy_name text, p_enemy_hp int, p_enemy_atk int, p_enemy_def int,
   p_damage_multiplier numeric, p_with_log boolean,
   p_effects text[] default '{}',
-  p_mods jsonb default '{}',      -- tổng thiên phú (get_talent_totals)
+  p_mods jsonb default '{}',      -- tổng thiên phú (get_talent_totals) + 'kit' (get_skill_kit)
   p_level_gap int default 0       -- cấp quái − cấp nhân vật (> 0: đánh vượt cấp)
 )
 returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb,
@@ -891,14 +891,63 @@ declare
   v_revived boolean := false;
   v_atk_now numeric; v_def_now numeric; v_stack numeric;
   v_parried boolean; v_counter int; v_echo_dmg int;
+  -- Bộ kỹ năng có hồi chiêu (get_skill_kit). Không có 'kit' → luân phiên a1/a2 như cũ.
+  v_kit jsonb := p_mods->'kit';
+  v_n int := coalesce(jsonb_array_length(p_mods->'kit'->'actives'), 0);
+  v_cds int[] := array_fill(0, array[greatest(1, coalesce(jsonb_array_length(p_mods->'kit'->'actives'), 0))]);
+  v_i int; v_best int; v_best_score numeric; v_score numeric; v_sk jsonb;
+  v_eff jsonb := '{}'::jsonb;
+  v_bonus numeric; v_multi int; v_hit_pierce numeric; v_stun_now boolean;
+  v_dot_dmg int := 0; v_dot_left int := 0; v_dot_name text; v_tick int;
+  v_stunned boolean := false;   -- quái bị đóng băng: mất lượt đánh kế
+  v_chill boolean := false;     -- quái vừa mất lượt vì đóng băng (Băng Vỡ đánh mạnh hơn)
 begin
+  -- Bị động "Sát Thương Chí Mạng" cộng thẳng vào hệ số chí mạng
+  v_crit_mult := v_crit_mult + coalesce((v_kit->>'crit_damage')::numeric, 0);
+
   while v_char_hp > 0 and v_enemy_hp > 0 and v_turn < 30 loop
     v_turn := v_turn + 1;
 
-    if v_turn % 2 = 1 then
-      v_skill_name := p_a1_name; v_skill_power := p_a1_power;
+    if v_kit is null then
+      if v_turn % 2 = 1 then
+        v_skill_name := p_a1_name; v_skill_power := p_a1_power;
+      else
+        v_skill_name := p_a2_name; v_skill_power := p_a2_power;
+      end if;
     else
-      v_skill_name := p_a2_name; v_skill_power := p_a2_power;
+      -- Hồi chiêu: dùng skill sẵn sàng có sức mạnh hiệu dụng cao nhất, không có thì đánh thường
+      for v_i in 1..v_n loop
+        v_cds[v_i] := greatest(0, v_cds[v_i] - 1);
+      end loop;
+      v_best := 0; v_best_score := 1;
+      for v_i in 1..v_n loop
+        v_sk := v_kit->'actives'->(v_i - 1);
+        continue when v_cds[v_i] > 0;
+        continue when v_char_hp < p_max_hp * coalesce((v_sk->'effect'->>'min_hp')::numeric, 0);
+        v_score := (v_sk->>'power')::numeric
+          * (1 + case when v_turn >= 3 then coalesce((v_sk->'effect'->>'streak')::numeric, 0) else 0 end
+               + case when v_chill then coalesce((v_sk->'effect'->>'bonus_stunned')::numeric, 0) else 0 end
+               + case when v_enemy_hp < p_enemy_hp * 0.3 then coalesce((v_sk->'effect'->>'execute')::numeric, 0) else 0 end)
+          * coalesce((v_sk->'effect'->>'hits')::numeric, 1);
+        if v_score > v_best_score then v_best := v_i; v_best_score := v_score; end if;
+      end loop;
+
+      if v_best > 0 then
+        v_sk := v_kit->'actives'->(v_best - 1);
+        v_eff := coalesce(v_sk->'effect', '{}'::jsonb);
+        v_skill_name := v_sk->>'name';
+        v_skill_power := v_best_score / coalesce((v_eff->>'hits')::numeric, 1);
+        v_cds[v_best] := coalesce((v_sk->>'cooldown')::int, 0);
+      else
+        v_eff := '{}'::jsonb;
+        v_skill_name := 'Đánh thường'; v_skill_power := 1;
+      end if;
+      v_chill := false;
+
+      -- Chém Tuyệt Vọng: tự mất % HP hiện tại
+      if coalesce((v_eff->>'hp_cost')::numeric, 0) > 0 then
+        v_char_hp := greatest(1, v_char_hp - greatest(1, round(v_char_hp * (v_eff->>'hp_cost')::numeric))::int);
+      end if;
     end if;
 
     -- Phong Hầu: +x% ATK/DEF mỗi lượt đã qua (tối đa 10); Cuồng Huyết: ATK tăng dần khi HP
@@ -909,14 +958,16 @@ begin
     v_def_now := p_char_def * (1 + v_stack);
 
     -- Đòn Kép: đánh thêm 1 đòn trong lượt
-    v_hits := case when random() < v_double_chance then 2 else 1 end;
+    v_multi := coalesce((v_eff->>'hits')::int, 1);
+    v_hits := v_multi + case when random() < v_double_chance then 1 else 0 end;
+    v_hit_pierce := 1 - (1 - v_pierce) * (1 - least(1, coalesce((v_eff->>'pierce')::numeric, 0)));
 
     for v_hit in 1..v_hits loop
       exit when v_enemy_hp <= 0;
 
       v_is_crit := random() < p_crit;
       v_base_dmg := greatest(1, (v_atk_now * v_skill_power
-        - case when v_is_crit and v_crit_pierce then 0 else p_enemy_def * (1 - v_pierce) end) * v_gap_mult);
+        - case when v_is_crit and v_crit_pierce then 0 else p_enemy_def * (1 - v_hit_pierce) end) * v_gap_mult);
       v_opening := v_opening_mult > 1 and v_turn = 1 and v_hit = 1;
       if v_opening then
         v_base_dmg := v_base_dmg * v_opening_mult;   -- Khai Cuộc
@@ -924,17 +975,27 @@ begin
       v_dmg := round(v_base_dmg * (case when v_is_crit then v_crit_mult else 1 end));
       v_enemy_hp := greatest(0, v_enemy_hp - v_dmg);
 
-      if p_lifesteal > 0 then
+      if p_lifesteal + coalesce((v_eff->>'lifesteal')::numeric, 0) > 0 then
         -- Khát Máu Vô Tận: HP dưới 30% thì hút máu nhân thêm
-        v_char_hp := least(p_max_hp, v_char_hp + round(v_dmg * p_lifesteal
+        v_char_hp := least(p_max_hp, v_char_hp + round(v_dmg * (p_lifesteal + coalesce((v_eff->>'lifesteal')::numeric, 0))
           * case when v_char_hp < p_max_hp * 0.3 then v_low_hp_ls else 1 end));
+      end if;
+
+      -- Hiệu ứng chỉ áp ở đòn đầu của skill: đóng băng, độc/thiêu
+      v_stun_now := v_hit = 1 and coalesce((v_eff->>'stun')::numeric, 0) > 0
+                    and random() < (v_eff->>'stun')::numeric;
+      if v_stun_now then v_stunned := true; end if;
+      if v_hit = 1 and coalesce((v_eff->>'dot')::numeric, 0) > 0 then
+        v_dot_dmg := greatest(1, round(v_atk_now * (v_eff->>'dot')::numeric))::int;
+        v_dot_left := coalesce((v_eff->>'dot_turns')::int, 2);
+        v_dot_name := coalesce(v_eff->>'dot_name', 'Độc');
       end if;
 
       if p_with_log then
         v_log := v_log || jsonb_build_object(
           'turn', v_turn, 'actor', 'character', 'skill', v_skill_name,
           'damage', v_dmg, 'crit', v_is_crit, 'enemy_hp_left', v_enemy_hp,
-          'double', v_hit = 2, 'opening', v_opening
+          'double', v_hit > v_multi, 'opening', v_opening, 'stun', v_stun_now
         );
       end if;
     end loop;
@@ -951,7 +1012,33 @@ begin
       end if;
     end if;
 
+    -- Độc / thiêu: trừ máu quái cuối mỗi lượt của mình
+    if v_dot_left > 0 and v_enemy_hp > 0 then
+      v_tick := v_dot_dmg;
+      v_enemy_hp := greatest(0, v_enemy_hp - v_tick);
+      v_dot_left := v_dot_left - 1;
+      if p_with_log then
+        v_log := v_log || jsonb_build_object(
+          'turn', v_turn, 'actor', 'character', 'skill', v_dot_name,
+          'damage', v_tick, 'crit', false, 'enemy_hp_left', v_enemy_hp, 'dot', true
+        );
+      end if;
+    end if;
+
     exit when v_enemy_hp <= 0;
+
+    -- Đóng băng: quái mất lượt này
+    if v_stunned then
+      v_stunned := false;
+      v_chill := true;
+      if p_with_log then
+        v_log := v_log || jsonb_build_object(
+          'turn', v_turn, 'actor', 'enemy', 'enemy_name', p_enemy_name,
+          'damage', 0, 'character_hp_left', v_char_hp, 'stunned', true, 'enemy_hp_left', v_enemy_hp
+        );
+      end if;
+      continue;
+    end if;
 
     -- Phản Kích: đỡ trọn đòn quái và đánh trả
     v_parried := v_parry > 0 and random() < v_parry;
@@ -2318,7 +2405,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
-  v_mods := get_talent_totals(p_character_id);
+  v_mods := get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id));
 
   select exists (select 1 from zone_enemies ze where ze.zone_id = p_zone_id and ze.is_boss)
     into v_has_boss;
@@ -3159,7 +3246,7 @@ begin
     least(0.75, v_crit + v_skill_crit), 0, 0,
     v_a1_name, v_a1_power, v_a2_name, v_a2_power,
     'Nộm Tập', 2000000000, 0, v_def,
-    1, true, v_effects, get_talent_totals(p_character_id)
+    1, true, v_effects, get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id))
   ) f;
 
   select coalesce(jsonb_agg(e), '[]'::jsonb) into v_hits
@@ -3499,7 +3586,7 @@ begin
   v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
-  v_mods := get_talent_totals(p_character_id);
+  v_mods := get_talent_totals(p_character_id) || jsonb_build_object('kit', get_skill_kit(p_character_id));
 
   v_ap := v_current_ap;
   v_was_full_ap := (v_current_ap >= v_max_ap);
@@ -4205,3 +4292,108 @@ begin
 end;
 $$;
 
+-- ============================================================================
+-- KỸ NĂNG CLASS: HỒI CHIÊU + HIỆU ỨNG (dữ liệu skill nằm ở đây)
+-- ============================================================================
+
+alter table skills add column if not exists cooldown int not null default 0;
+alter table skills add column if not exists effect jsonb not null default '{}'::jsonb;
+comment on column skills.effect is
+  'Hiệu ứng skill chủ động: pierce, lifesteal, hp_cost, min_hp, stun, bonus_stunned, dot/dot_turns/dot_name, streak, execute, hits';
+comment on column skills.effect_type is 'Bị động: damage_reduction | lifesteal | crit_chance | crit_damage';
+
+-- Bộ kỹ năng cũ chỉ có trên DB live (không nằm trong repo) → thay toàn bộ bằng bộ mới
+delete from character_equipped_skills;
+delete from skills;
+
+insert into skills (class_id, key, name, description, skill_type, power_multiplier, cooldown, effect, effect_type, effect_value, unlock_level, icon)
+select cl.id, v.key, v.name, v.description, v.skill_type, v.power, v.cooldown, v.effect, v.effect_type, v.effect_value, v.unlock_level, v.icon
+from (values
+  ('warrior', 'warrior_slash', 'Chém Mạnh', '150% ATK', 'active', 1.5, 3, '{}'::jsonb, null, null, 1, '⚔️'),
+  ('warrior', 'warrior_knight', 'Kiếm Hiệp Sĩ', '160% ATK, xuyên 25% DEF', 'active', 1.6, 3, '{"pierce": 0.25}'::jsonb, null, null, 10, '🗡️'),
+  ('warrior', 'warrior_drain', 'Hút Máu', '140% ATK, hồi HP bằng 20% sát thương gây ra', 'active', 1.4, 3, '{"lifesteal": 0.2}'::jsonb, null, null, 20, '🩸'),
+  ('warrior', 'warrior_despair', 'Chém Tuyệt Vọng', 'Tốn 15% HP hiện tại, 240% ATK xuyên giáp hoàn toàn. Chỉ dùng khi HP ≥ 50%', 'active', 2.4, 5, '{"hp_cost": 0.15, "pierce": 1, "min_hp": 0.5}'::jsonb, null, null, 30, '💥'),
+  ('warrior', 'warrior_holy', 'Thánh Kích', '140% ATK xuyên giáp, hồi HP bằng 15% sát thương', 'active', 1.4, 3, '{"pierce": 1, "lifesteal": 0.15}'::jsonb, null, null, 40, '✨'),
+  ('warrior', 'warrior_armor', 'Giáp Dày', 'Giảm 10% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.1, 1, '🛡️'),
+  ('warrior', 'warrior_will', 'Ý Chí Thép', 'Hút máu 5% mọi đòn đánh', 'passive', null, 0, '{}'::jsonb, 'lifesteal', 0.05, 15, '❤️'),
+  ('mage', 'mage_fireball', 'Cầu Lửa', '160% ATK phép, xuyên giáp', 'active', 1.6, 4, '{"pierce": 1}'::jsonb, null, null, 1, '🔥'),
+  ('mage', 'mage_frost', 'Băng Tiễn', '140% ATK phép xuyên giáp, 20% đóng băng quái 1 lượt', 'active', 1.4, 3, '{"pierce": 1, "stun": 0.2}'::jsonb, null, null, 10, '❄️'),
+  ('mage', 'mage_shatter', 'Băng Vỡ', '200% ATK phép xuyên giáp; +40% nếu quái vừa bị đóng băng', 'active', 2.0, 5, '{"pierce": 1, "bonus_stunned": 0.4}'::jsonb, null, null, 20, '🧊'),
+  ('mage', 'mage_inferno', 'Hỏa Ngục', '220% ATK phép xuyên giáp', 'active', 2.2, 5, '{"pierce": 1}'::jsonb, null, null, 30, '🌋'),
+  ('mage', 'mage_meteor', 'Thiên Thạch', '130% ATK phép xuyên giáp + thiêu 10% ATK mỗi lượt trong 3 lượt', 'active', 1.3, 4, '{"pierce": 1, "dot": 0.1, "dot_turns": 3, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 40, '☄️'),
+  ('mage', 'mage_shield', 'Khiên Mana', 'Giảm 12% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.12, 1, '🔮'),
+  ('mage', 'mage_focus', 'Tập Trung', '+8% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.08, 15, '🎯'),
+  ('assassin', 'assassin_stab', 'Đâm Hiểm', '180% ATK', 'active', 1.8, 4, '{}'::jsonb, null, null, 1, '🗡️'),
+  ('assassin', 'assassin_venom', 'Đòn Độc', '120% ATK + độc 15% ATK mỗi lượt trong 2 lượt', 'active', 1.2, 3, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Độc"}'::jsonb, null, null, 10, '🐍'),
+  ('assassin', 'assassin_iai', 'Iaijutsu', '190% ATK, xuyên 30% DEF', 'active', 1.9, 4, '{"pierce": 0.3}'::jsonb, null, null, 20, '⚔️'),
+  ('assassin', 'assassin_divine', 'Kiếm Thần', '160% ATK xuyên giáp hoàn toàn', 'active', 1.6, 4, '{"pierce": 1}'::jsonb, null, null, 30, '🌙'),
+  ('assassin', 'assassin_execute', 'Kết Liễu', '160% ATK; +60% nếu quái còn dưới 30% HP', 'active', 1.6, 5, '{"execute": 0.6}'::jsonb, null, null, 40, '💀'),
+  ('assassin', 'assassin_critdmg', 'Sát Thương Chí Mạng', 'Đòn chí mạng gây thêm 30% sát thương', 'passive', null, 0, '{}'::jsonb, 'crit_damage', 0.3, 1, '💢'),
+  ('assassin', 'assassin_shadow', 'Bóng Tối', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 15, '🌑'),
+  ('archer', 'archer_shot', 'Mũi Tên Đánh Dấu', '150% ATK', 'active', 1.5, 3, '{}'::jsonb, null, null, 1, '🏹'),
+  ('archer', 'archer_pierce', 'Xuyên Tâm Tiễn', '140% ATK, xuyên 50% DEF', 'active', 1.4, 3, '{"pierce": 0.5}'::jsonb, null, null, 10, '🎯'),
+  ('archer', 'archer_aimed', 'Nhắm Bắn', '180% ATK; +30% từ lượt thứ 3 trở đi', 'active', 1.8, 5, '{"streak": 0.3}'::jsonb, null, null, 20, '🦅'),
+  ('archer', 'archer_fire', 'Tên Lửa', '130% ATK + thiêu 15% ATK mỗi lượt trong 2 lượt', 'active', 1.3, 4, '{"dot": 0.15, "dot_turns": 2, "dot_name": "Thiêu đốt"}'::jsonb, null, null, 30, '🔥'),
+  ('archer', 'archer_volley', 'Liên Xạ', 'Bắn 3 mũi, mỗi mũi 70% ATK', 'active', 0.7, 5, '{"hits": 3}'::jsonb, null, null, 40, '🌧️'),
+  ('archer', 'archer_eagle', 'Mắt Đại Bàng', '+10% tỉ lệ chí mạng', 'passive', null, 0, '{}'::jsonb, 'crit_chance', 0.1, 1, '👁️'),
+  ('archer', 'archer_reflex', 'Phản Xạ', 'Giảm 8% sát thương nhận vào', 'passive', null, 0, '{}'::jsonb, 'damage_reduction', 0.08, 15, '🍃')
+) as v(class_key, key, name, description, skill_type, power, cooldown, effect, effect_type, effect_value, unlock_level, icon)
+join classes cl on cl.key = v.class_key;
+
+-- Trang bị lại cho mọi nhân vật: 2 skill chủ động + 1 bị động mạnh nhất đã mở
+insert into character_equipped_skills (character_id, skill_id)
+select c.id, s.id
+from characters c
+cross join lateral (
+  select sk.id from skills sk
+  where sk.class_id = c.class_id and sk.skill_type = 'active' and sk.unlock_level <= c.level
+  order by sk.unlock_level desc limit 2
+) s
+union all
+select c.id, s.id
+from characters c
+cross join lateral (
+  select sk.id from skills sk
+  where sk.class_id = c.class_id and sk.skill_type = 'passive' and sk.unlock_level <= c.level
+  order by sk.unlock_level desc limit 1
+) s;
+
+create or replace function public.get_skill_kit(p_character_id uuid)
+returns jsonb
+language sql
+stable
+set search_path = 'public'
+as $$
+  select jsonb_build_object(
+    'actives', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'name', s.name, 'power', s.power_multiplier, 'cooldown', s.cooldown, 'effect', s.effect
+             ) order by s.unlock_level)
+      from character_equipped_skills ces join skills s on s.id = ces.skill_id
+      where ces.character_id = p_character_id and s.skill_type = 'active'), '[]'::jsonb),
+    'crit_damage', coalesce((
+      select sum(s.effect_value)
+      from character_equipped_skills ces join skills s on s.id = ces.skill_id
+      where ces.character_id = p_character_id and s.skill_type = 'passive' and s.effect_type = 'crit_damage'), 0)
+  );
+$$;
+
+-- Nhân vật mới: tự trang bị skill chủ động + bị động cấp 1 (trước đây chỉ đánh thường)
+create or replace function public.equip_starter_skills()
+returns trigger
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  insert into character_equipped_skills (character_id, skill_id)
+  select new.id, s.id from skills s
+  where s.class_id = new.class_id and s.unlock_level <= 1;
+  return new;
+end;
+$$;
+
+drop trigger if exists equip_starter_skills on characters;
+create trigger equip_starter_skills
+  after insert on characters
+  for each row execute function public.equip_starter_skills();

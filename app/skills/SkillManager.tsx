@@ -16,6 +16,8 @@ type Skill = {
   skill_type: 'active' | 'passive'
   unlock_level: number
   icon: string | null
+  power_multiplier: number | null
+  cooldown: number
 }
 
 type EquippedRow = {
@@ -188,9 +190,19 @@ function SkillGroup({
                 <span className="text-xl leading-none mt-0.5">{skill.icon}</span>
                 <div>
                   <p className="font-semibold text-white">{skill.name}</p>
-                  <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
+                  <p className={`${ui.className} text-xs text-[#a29fb3] mt-1`}>
                     {skill.description}
                   </p>
+                  {skill.skill_type === 'active' && (
+                    <p className={`${ui.className} flex gap-1.5 mt-1.5`}>
+                      <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-[#e5e1ed]">
+                        ×{skill.power_multiplier ?? 1}
+                      </span>
+                      <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-[#a29fb3]">
+                        ⏳ hồi {skill.cooldown} lượt
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
 

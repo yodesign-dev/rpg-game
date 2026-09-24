@@ -18,6 +18,7 @@ export type ClassInfo = {
     name: string
     description: string
     skill_type: 'active' | 'passive'
+    cooldown?: number
     power_multiplier: number | null
     unlock_level: number
   }[]
@@ -60,10 +61,9 @@ export default function ClassCard({ c, highlight = false }: { c: ClassInfo; high
       <ul className="mt-3 space-y-1 text-xs">
         {actives.map((s) => (
           <li key={s.key} className="text-[#8fa4d8]">
-            ⚔️ <b className="text-[#b8c8f0]">{s.name}</b> — {Math.round((s.power_multiplier ?? 1) * 100)}% ATK
+            ⚔️ <b className="text-[#b8c8f0]">{s.name}</b> — {s.description}
             <span className="text-[#6b7494]">
-              {' '}
-              · {s.description}
+              {!!s.cooldown && ` · hồi ${s.cooldown} lượt`}
               {s.unlock_level > 1 && ` (Lv${s.unlock_level})`}
             </span>
           </li>
