@@ -7,7 +7,7 @@ export default async function ClassesPage() {
   const { data } = await supabase
     .from('classes')
     .select(
-      'key, name, description, main_stat, auto_preset, base_hp, base_atk, base_def, base_spd, hp_per_level, atk_per_level, def_per_level, sort_order, skills(key, name, description, skill_type, power_multiplier, cooldown, unlock_level, icon)'
+      'key, name, description, main_stat, auto_preset, base_hp, base_atk, base_def, base_spd, base_crit, hp_per_level, atk_per_level, def_per_level, sort_order, skills(key, name, description, skill_type, power_multiplier, cooldown, unlock_level, icon)'
     )
     .order('sort_order')
   const myClass = (character.classes as { key: string }).key

@@ -13,6 +13,7 @@ create table classes (
   description   text not null,
   base_hp       int not null,
   base_atk      int not null,
+  base_crit     numeric not null default 0.05,  -- chí mạng khởi điểm theo class
   base_def      int not null,
   base_spd      int not null,
   -- Tăng trưởng tự động mỗi cấp (thấp hơn trước khi có điểm chỉ số — phần
@@ -384,8 +385,9 @@ as $$
     -- VIT: +1 DEF mỗi 2 điểm, +5 HP mỗi điểm
     p_vit / 2,
     p_vit * 5,
-    -- AGI +0.5% chí mạng, DEX +0.3% chí mạng (mọi class)
-    p_agi * 0.005 + p_dex * 0.003;
+    -- AGI 0.5 / DEX 0.3 "điểm chí mạng", giảm dần: 0.3 × r / (r + 0.5), tối đa ~30%
+    -- (trước cộng thẳng, Sát Thủ dồn AGI lên >100% chí mạng)
+    0.3 * (p_agi * 0.005 + p_dex * 0.003) / (p_agi * 0.005 + p_dex * 0.003 + 0.5);
 $$;
 
 -- Chỉ số tổng hợp của nhân vật: base_* = class + cấp + điểm chỉ số (chưa có
@@ -453,7 +455,7 @@ as $$
       round((cl.base_def + (ch.level - 1) * cl.def_per_level + ab.attr_def)
             * greatest(0.1, 1 + coalesce((t.j->>'def_pct')::numeric, 0)))::int as base_def,
       cl.base_spd + (ch.level - 1) * cl.spd_per_level as base_spd,
-      ab.attr_crit,
+      ab.attr_crit + cl.base_crit as attr_crit,   -- chí mạng khởi điểm theo class + AGI/DEX
       coalesce((t.j->>'crit')::numeric, 0) as talent_crit,
       coalesce((t.j->>'lifesteal')::numeric, 0) as talent_lifesteal
     from characters ch
@@ -861,7 +863,9 @@ create or replace function public.simulate_fight(
   p_damage_multiplier numeric, p_with_log boolean,
   p_effects text[] default '{}',
   p_mods jsonb default '{}',      -- tổng thiên phú (get_talent_totals) + 'kit' (get_skill_kit)
-  p_level_gap int default 0       -- cấp quái − cấp nhân vật (> 0: đánh vượt cấp)
+  p_level_gap int default 0,      -- cấp quái − cấp nhân vật (> 0: đánh vượt cấp)
+  p_enemy_traits text[] default '{}', -- đặc tính quái (mô tả: ENEMY_TRAITS, lib/enemies.ts)
+  p_enemy_level int default 0     -- cấp quái: hằng số DEF theo tỉ lệ
 )
 returns table(out_win boolean, out_timed_out boolean, out_hp_left int, out_dmg_taken int, out_log jsonb,
               out_revived boolean)
@@ -923,9 +927,32 @@ declare
   v_regen numeric := least(0.03, coalesce((p_mods->>'regen')::numeric, 0));
   v_skill_dmg numeric := least(0.5, coalesce((p_mods->>'skill_dmg')::numeric, 0));
   v_gear_red numeric := least(0.25, coalesce((p_mods->>'gear_dmg_red')::numeric, 0));
+  -- Đặc tính quái
+  v_t_armored boolean := 'armored' = any(p_enemy_traits);  -- Giáp Cứng: chí mạng yếu, không xuyên giáp
+  v_t_evasive boolean := 'evasive' = any(p_enemy_traits);  -- Né Tránh: 15% đòn trượt
+  v_t_savage boolean := 'savage' = any(p_enemy_traits);    -- Hung Bạo: quái chí mạng 15% ×1.5
+  v_t_enrage boolean := 'enrage' = any(p_enemy_traits);    -- Cuồng Nộ: dưới 50% HP ATK ×1.3
+  v_t_venom boolean := 'venom' = any(p_enemy_traits);      -- Độc: trúng đòn bị độc 2% HP/lượt
+  v_t_regen boolean := 'regen' = any(p_enemy_traits);      -- Tái Sinh: hồi 4% HP mỗi lượt
+  v_t_thorny boolean := 'thorny' = any(p_enemy_traits);    -- Gai: phản 4% sát thương nhận
+  v_ls_mult numeric := case when 'unholy' = any(p_enemy_traits) then 0.5 else 1 end; -- Ô Uế: hút máu −50%
+  v_miss boolean; v_real int; v_reflect int; v_poison int := 0; v_poison_tick int; v_regen_e int;
+  v_enemy_crit boolean; v_enraged boolean; v_enrage_logged boolean := false;
+  -- Sát thương quái: DEF giảm theo tỉ lệ DEF/(DEF+K) thay vì trừ thẳng (DEF cao không vô hiệu
+  -- hoá quái). Hoà dần từ Lv30 (công thức cũ) tới Lv60 (công thức mới) để giữ cân bằng cấp thấp.
+  v_k numeric := 20 + 6 * greatest(1, p_enemy_level);
+  v_blend numeric := least(1, greatest(0, (p_enemy_level - 30) / 30.0));
+  v_old_dmg numeric; v_ratio_dmg numeric;
 begin
+  -- Trần chung: chí mạng 50%, hút máu (chỉ số + bị động) 10%
+  p_crit := least(0.5, p_crit);
+  p_lifesteal := least(0.10, p_lifesteal);
   -- Bị động "Sát Thương Chí Mạng" cộng thẳng vào hệ số chí mạng
   v_crit_mult := v_crit_mult + coalesce((v_kit->>'crit_damage')::numeric, 0);
+  if v_t_armored then
+    v_crit_mult := 1 + (v_crit_mult - 1) * 0.5;
+    v_crit_pierce := false;
+  end if;
 
   while v_char_hp > 0 and v_enemy_hp > 0 and v_turn < 30 loop
     v_turn := v_turn + 1;
@@ -992,6 +1019,17 @@ begin
     for v_hit in 1..v_hits loop
       exit when v_enemy_hp <= 0;
 
+      v_miss := v_t_evasive and random() < 0.15;
+      if v_miss then
+        if p_with_log then
+          v_log := v_log || jsonb_build_object(
+            'turn', v_turn, 'actor', 'character', 'skill', v_skill_name,
+            'damage', 0, 'miss', true, 'enemy_hp_left', v_enemy_hp
+          );
+        end if;
+        continue;
+      end if;
+
       v_is_crit := random() < p_crit;
       v_base_dmg := greatest(1, (v_atk_now * v_skill_power
         - case when v_is_crit and v_crit_pierce then 0 else p_enemy_def * (1 - v_hit_pierce) end) * v_gap_mult);
@@ -1000,12 +1038,20 @@ begin
         v_base_dmg := v_base_dmg * v_opening_mult;   -- Khai Cuộc
       end if;
       v_dmg := round(v_base_dmg * (case when v_is_crit then v_crit_mult else 1 end));
+      -- Hút máu / phản gai chỉ tính phần sát thương thật (không tính phần tràn khi quái đã hết máu)
+      v_real := least(v_dmg, v_enemy_hp);
       v_enemy_hp := greatest(0, v_enemy_hp - v_dmg);
 
       if p_lifesteal + coalesce((v_eff->>'lifesteal')::numeric, 0) > 0 then
         -- Khát Máu Vô Tận: HP dưới 30% thì hút máu nhân thêm
-        v_char_hp := least(p_max_hp, v_char_hp + round(v_dmg * (p_lifesteal + coalesce((v_eff->>'lifesteal')::numeric, 0))
-          * case when v_char_hp < p_max_hp * 0.3 then v_low_hp_ls else 1 end));
+        v_char_hp := least(p_max_hp, v_char_hp + round(v_real * (p_lifesteal + coalesce((v_eff->>'lifesteal')::numeric, 0))
+          * v_ls_mult * case when v_char_hp < p_max_hp * 0.3 then v_low_hp_ls else 1 end));
+      end if;
+
+      v_reflect := case when v_t_thorny then round(v_real * 0.04)::int else 0 end;
+      if v_reflect > 0 then
+        v_char_hp := greatest(1, v_char_hp - v_reflect);
+        v_dmg_taken := v_dmg_taken + v_reflect;
       end if;
 
       -- Hiệu ứng chỉ áp ở đòn đầu của skill: đóng băng, độc/thiêu
@@ -1022,7 +1068,7 @@ begin
         v_log := v_log || jsonb_build_object(
           'turn', v_turn, 'actor', 'character', 'skill', v_skill_name,
           'damage', v_dmg, 'crit', v_is_crit, 'enemy_hp_left', v_enemy_hp,
-          'double', v_hit > v_multi, 'opening', v_opening, 'stun', v_stun_now
+          'double', v_hit > v_multi, 'opening', v_opening, 'stun', v_stun_now, 'reflect', v_reflect
         );
       end if;
     end loop;
@@ -1054,6 +1100,13 @@ begin
 
     exit when v_enemy_hp <= 0;
 
+    -- Tái Sinh: quái hồi máu đầu lượt của nó
+    v_regen_e := 0;
+    if v_t_regen then
+      v_regen_e := least(p_enemy_hp - v_enemy_hp, round(p_enemy_hp * 0.04)::int);
+      v_enemy_hp := v_enemy_hp + v_regen_e;
+    end if;
+
     -- Đóng băng: quái mất lượt này
     if v_stunned then
       v_stunned := false;
@@ -1084,13 +1137,28 @@ begin
     -- DEF trừ thẳng nhưng quái luôn gây ít nhất 15% ATK của nó — trước đây sàn là 1,
     -- DEF nhân vật (cấp + VIT + đồ) vượt ATK quái nên quái gần như không gây sát thương
     -- Trụ Cột: mỗi lần trúng đòn trước đó +x% giảm sát thương (tối đa 3), chung trần 60%
-    v_enemy_dmg := greatest(1, p_enemy_atk - v_def_now, p_enemy_atk * 0.15)
+    v_old_dmg := greatest(1, p_enemy_atk - v_def_now, p_enemy_atk * 0.15);
+    v_ratio_dmg := p_enemy_atk * v_k / (v_k + greatest(0, v_def_now));
+    v_enraged := v_t_enrage and v_enemy_hp < p_enemy_hp * 0.5;
+    v_enemy_crit := v_t_savage and random() < 0.15;
+    v_enemy_dmg := (v_old_dmg * (1 - v_blend) + greatest(v_old_dmg, v_ratio_dmg) * v_blend)
+                   * case when v_enraged then 1.3 else 1 end
+                   * case when v_enemy_crit then 1.5 else 1 end
                    * p_damage_multiplier
                    * (1 - least(0.6, p_dmg_reduction + v_gear_red + least(3, v_guard_hits) * v_guard_step)) * v_guardian;
     v_enemy_hit := round(v_enemy_dmg);
     v_char_hp := greatest(0, v_char_hp - v_enemy_hit);
     v_dmg_taken := v_dmg_taken + v_enemy_hit;
     v_guard_hits := v_guard_hits + 1;
+
+    -- Độc: ngấm từ đòn trước, trúng đòn thì (lại) bị độc
+    v_poison_tick := 0;
+    if v_poison > 0 and v_char_hp > 0 then
+      v_poison_tick := v_poison;
+      v_char_hp := greatest(0, v_char_hp - v_poison_tick);
+      v_dmg_taken := v_dmg_taken + v_poison_tick;
+    end if;
+    if v_t_venom then v_poison := greatest(1, round(p_max_hp * 0.02)::int); end if;
 
     -- Phản Đòn: 20% sát thương nhận vào dội lại quái
     v_thorns := case when v_thorns_on then round(v_enemy_hit * 0.2) else 0 end;
@@ -1102,8 +1170,11 @@ begin
       v_log := v_log || jsonb_build_object(
         'turn', v_turn, 'actor', 'enemy', 'enemy_name', p_enemy_name,
         'damage', v_enemy_hit, 'character_hp_left', v_char_hp,
-        'thorns', v_thorns, 'enemy_hp_left', v_enemy_hp
+        'thorns', v_thorns, 'enemy_hp_left', v_enemy_hp,
+        'enemy_crit', v_enemy_crit, 'enraged', v_enraged and not v_enrage_logged,
+        'poison', v_poison_tick, 'regen', v_regen_e
       );
+      v_enrage_logged := v_enrage_logged or v_enraged;
     end if;
 
     -- Giả Chết: đòn chí tử đầu tiên để lại x% HP
@@ -2324,7 +2395,8 @@ create table if not exists zones (
   max_level   int not null,
   ap_cost     int not null,                    -- vé vào vùng, trừ 1 lần mỗi lượt explore
   boss_chance numeric not null default 0.03,   -- tỉ lệ mỗi lượt gặp boss thay vì quái thường
-  sort_order  int not null default 0
+  sort_order  int not null default 0,
+  traits      text[] not null default '{}'     -- đặc tính quái của vùng (ENEMY_TRAITS, lib/enemies.ts)
 );
 
 create table if not exists zone_enemies (
@@ -2405,7 +2477,7 @@ declare
   v_has_boss boolean;
   v_is_boss boolean;
   -- Cấp quái thường: Tinh Anh / Hung Thần (boss không tung cấp)
-  v_tier text; v_tier_roll numeric; v_name text;
+  v_tier text; v_tier_roll numeric; v_name text; v_traits text[];
   v_e_hp int; v_e_atk int; v_e_def int;
   v_reward_mult numeric; v_drop_mult numeric;
   v_exp_multiplier numeric; v_damage_multiplier numeric;
@@ -2476,7 +2548,7 @@ begin
          v_dmg_reduction, v_lifesteal, v_crit_chance
   from get_combat_skills(p_character_id) cs;
 
-  v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
+  v_crit_chance := least(0.5, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
   v_mods := combat_mods(p_character_id);
@@ -2522,6 +2594,12 @@ begin
     v_e_def := round(v_enemy.def * case v_tier when 'elite' then 1.15 when 'champion' then 1.25 else 1 end);
     v_reward_mult := case v_tier when 'elite' then 2.5 when 'champion' then 4 else 1 end;
     v_drop_mult := case v_tier when 'elite' then 1.5 when 'champion' then 2 else 1 end;
+    -- Đặc tính: của vùng + Tinh Anh thêm 1, Hung Thần thêm 2 (ngẫu nhiên), boss luôn Cuồng Nộ
+    v_traits := v_zone.traits || case
+      when v_is_boss then array['enrage']
+      when v_tier = 'elite' then enemy_extra_traits(1, v_zone.traits)
+      when v_tier = 'champion' then enemy_extra_traits(2, v_zone.traits)
+      else '{}'::text[] end;
 
     select exp_multiplier, damage_multiplier into v_exp_multiplier, v_damage_multiplier
     from calculate_combat_scaling(v_level, v_enemy.level);
@@ -2534,7 +2612,7 @@ begin
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
       v_name, v_e_hp, v_e_atk, v_e_def,
       v_damage_multiplier, true, v_effects, v_mods,
-      v_enemy.level - v_level
+      v_enemy.level - v_level, v_traits, v_enemy.level
     ) f;
 
     -- Chỉ giữ log từng đòn của trận cuối (nút "Xem trận cuối" trên web)
@@ -2585,6 +2663,7 @@ begin
       'level', v_enemy.level,
       'boss', v_is_boss,
       'tier', v_tier,
+      'traits', to_jsonb(v_traits),
       'log', v_fight_log,
       'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
       'hp_left', v_hp,
@@ -3379,7 +3458,7 @@ begin
   select f.out_log into v_log
   from simulate_fight(
     v_atk, 0, 1000000000, 1000000000,
-    least(0.75, v_crit + v_skill_crit), 0, 0,
+    least(0.5, v_crit + v_skill_crit), 0, 0,
     v_a1_name, v_a1_power, v_a2_name, v_a2_power,
     'Nộm Tập', 2000000000, 0, v_def,
     1, true, v_effects, combat_mods(p_character_id)
@@ -3397,7 +3476,7 @@ begin
     'crits', (select count(*) from jsonb_array_elements(v_hits) e where (e->>'crit')::boolean),
     'doubles', (select count(*) from jsonb_array_elements(v_hits) e where (e->>'double')::boolean),
     'atk', v_atk,
-    'crit_chance', least(0.75, v_crit + v_skill_crit),
+    'crit_chance', least(0.5, v_crit + v_skill_crit),
     'effects', to_jsonb(v_effects),
     'log', v_hits
   );
@@ -3598,7 +3677,7 @@ on conflict (key) do nothing;
 -- tháp (1 + 0.4% mỗi tầng → tầng 100 ×1.4) để đỉnh tháp khó hơn Thiên Đường.
 create or replace function public.tower_floor_enemies(p_floor int)
 returns table(out_idx int, out_name text, out_level int, out_kind text,
-              out_hp int, out_atk int, out_def int, out_exp int, out_gold int)
+              out_hp int, out_atk int, out_def int, out_exp int, out_gold int, out_traits text[])
 language plpgsql
 stable
 set search_path = 'public'
@@ -3606,9 +3685,16 @@ as $$
 declare
   v_lvl int := greatest(1, least(100, p_floor));
   -- Khó hơn: HP ×(2 + 0.025 × tầng), ATK ×1.15, mỗi tầng +1% (trước 0.4%)
+  -- Mỗi tầng +1%, từ tầng 30 quái mạnh thêm (khớp enemy_level_mult)
   v_tm numeric := 1 + v_lvl * 0.01;
-  v_hp numeric := (16 + 6 * v_lvl) * (2 + 0.025 * v_lvl);
-  v_atk numeric := (case when v_lvl < 15 then 3 + 1.5 * v_lvl else 8 + 1.2 * v_lvl end) * 1.15;
+  -- Đặc tính cố định theo tầng (xem trước = lúc đánh): từ tầng 11, đổi mỗi 5 tầng
+  v_pool text[] := array['evasive','armored','venom','enrage','unholy','regen','thorny','savage'];
+  v_base int := (p_floor / 5) % 8;
+  v_trait text[] := case when v_lvl > 10 then array[v_pool[1 + v_base]] else '{}'::text[] end;
+  v_hp numeric := (16 + 6 * v_lvl) * (2 + 0.025 * v_lvl) * enemy_level_mult(v_lvl);
+  -- Tháp đã có +1%/tầng nên ATK chỉ theo đường cong HP (nhẹ hơn quái vùng)
+  v_atk numeric := (case when v_lvl < 15 then 3 + 1.5 * v_lvl else 8 + 1.2 * v_lvl end) * 1.15
+                   * enemy_level_mult(v_lvl);
   v_def numeric := 0.8 * v_lvl;
   v_name text;
   v_idx int := 0;
@@ -3626,7 +3712,8 @@ begin
       v_idx := v_idx + 1;
       return query select v_idx, v_name, v_lvl, 'boss',
         round(v_hp * 3 * v_tm)::int, round(v_atk * 1.25 * v_tm)::int, round(v_def * 1.2)::int,
-        (1 + v_lvl) * 6, (1 + v_lvl) * 6;
+        (1 + v_lvl) * 6, (1 + v_lvl) * 6,
+        v_trait || array[v_pool[1 + (v_base + 1) % 8], v_pool[1 + (v_base + 3 + v_idx) % 8]];
     end loop;
     return;
   end if;
@@ -3637,7 +3724,8 @@ begin
     v_idx := 1;
     return query select 1, 'Tinh Anh ' || v_name, v_lvl + 1, 'elite',
       round(v_hp * 2 * v_tm)::int, round(v_atk * 1.15 * v_tm)::int, round(v_def * 1.15)::int,
-      (2 + v_lvl) * 3, (2 + v_lvl) * 3;
+      (2 + v_lvl) * 3, (2 + v_lvl) * 3,
+      v_trait || array[v_pool[1 + (v_base + 2) % 8]];
   end if;
 
   for k in (v_idx + 1)..2 loop
@@ -3645,7 +3733,7 @@ begin
     order by abs(ze.level - v_lvl), ze.name limit 1 offset ((v_lvl + k) % 3);
     return query select k, v_name, v_lvl, 'normal',
       round(v_hp * v_tm)::int, round(v_atk * v_tm)::int, round(v_def)::int,
-      1 + v_lvl, 1 + v_lvl;
+      1 + v_lvl, 1 + v_lvl, v_trait;
   end loop;
 end;
 $$;
@@ -3723,7 +3811,7 @@ begin
          cs.out_dmg_reduction, cs.out_lifesteal, cs.out_crit
     into v_a1_name, v_a1_power, v_a2_name, v_a2_power, v_dmg_reduction, v_lifesteal, v_crit_chance
   from get_combat_skills(p_character_id) cs;
-  v_crit_chance := least(0.75, v_crit_chance + v_stat_crit_bonus);
+  v_crit_chance := least(0.5, v_crit_chance + v_stat_crit_bonus);
   v_lifesteal := v_lifesteal + v_stat_lifesteal_bonus;
   v_effects := get_character_effects(p_character_id);
   v_mods := combat_mods(p_character_id);
@@ -3762,7 +3850,7 @@ begin
           v_a1_name, v_a1_power, v_a2_name, v_a2_power,
           v_enemy.out_name, v_enemy.out_hp, v_enemy.out_atk, v_enemy.out_def,
           v_dmg_mult, true, v_effects, v_mods,
-          v_enemy.out_level - v_level
+          v_enemy.out_level - v_level, v_enemy.out_traits, v_enemy.out_level
         ) f;
 
         -- Giả Chết chỉ 1 lần mỗi lần leo
@@ -3778,7 +3866,8 @@ begin
       v_enemies := v_enemies || jsonb_build_object(
         'name', v_enemy.out_name, 'level', v_enemy.out_level, 'kind', v_enemy.out_kind,
         'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
-        'hp_left', v_hp, 'dmg_taken', v_dmg_taken, 'log', v_fight_log
+        'hp_left', v_hp, 'dmg_taken', v_dmg_taken, 'log', v_fight_log,
+        'traits', to_jsonb(v_enemy.out_traits)
       );
 
       if not v_win then
@@ -4908,3 +4997,43 @@ update zone_enemies set hp = round(hp * (2 + 0.025 * level)), atk = round(atk * 
 
 -- Đường EXP gấp 2.5 lần: cập nhật mốc của nhân vật hiện có (giữ EXP đang tích)
 update characters set exp_to_next = round(2.5 * (100 + (level - 1) * 50));
+
+-- ============================================================================
+-- CÂN BẰNG CẤP CAO + ĐẶC TÍNH QUÁI (chạy sau seed + cân bằng hardcore)
+-- ============================================================================
+update classes c set base_crit = v.crit
+from (values ('warrior', 0.05), ('mage', 0.08), ('archer', 0.10), ('assassin', 0.15)) as v(key, crit)
+where c.key = v.key;
+
+update zones z set traits = v.traits
+from (values
+  ('hang_dong', array['evasive']), ('nui_tuyet', array['armored']), ('sa_mac', array['venom']),
+  ('nui_lua', array['enrage']), ('vuc_toi', array['unholy']), ('thanh_dia', array['regen']),
+  ('hu_khong', array['evasive']), ('hon_nguyen', array['thorny']), ('thien_duong', array['savage'])
+) as v(key, traits)
+where z.key = v.key;
+
+create or replace function public.enemy_level_mult(p_level int, p_atk boolean default false)
+returns numeric
+language sql
+immutable
+as $$
+  select 1 + case when p_atk then 1.8 else 1.2 end * greatest(0, least(p_level, 85) - 30) / 55.0;
+$$;
+
+-- Quái vùng từ Lv30 (chạy 1 lần — nhân trên chỉ số đang có)
+update zone_enemies set hp = round(hp * enemy_level_mult(level)), atk = round(atk * enemy_level_mult(level, true))
+where level > 30;
+
+create or replace function public.enemy_extra_traits(p_n int, p_exclude text[])
+returns text[]
+language sql
+volatile
+as $$
+  select coalesce(array_agg(t), '{}') from (
+    select t from unnest(array['armored','evasive','savage','enrage','venom','regen','thorny','unholy']) t
+    where not t = any(p_exclude)
+    order by random() limit p_n
+  ) x;
+$$;
+

@@ -1,4 +1,4 @@
-import { enemySprite, parseEnemyName, type EnemyTier } from '@/lib/enemies'
+import { ENEMY_TRAITS, enemySprite, parseEnemyName, type EnemyTier } from '@/lib/enemies'
 
 // Viền theo cấp — giống nhau cho mọi loài, vì màu sprite đổi theo từng họ quái nên không tự nói
 // lên độ mạnh.
@@ -41,6 +41,21 @@ export default function EnemyAvatar({ name, size = 24, boss }: { name: string; s
           }`}
         />
       )}
+    </span>
+  )
+}
+
+// Biểu tượng đặc tính quái, di chuột / giữ để xem mô tả
+export function EnemyTraits({ traits, className = '' }: { traits?: string[] | null; className?: string }) {
+  const known = [...new Set(traits ?? [])].filter((t) => ENEMY_TRAITS[t])
+  if (known.length === 0) return null
+  return (
+    <span className={`inline-flex gap-0.5 ${className}`}>
+      {known.map((t) => (
+        <span key={t} title={`${ENEMY_TRAITS[t].name}: ${ENEMY_TRAITS[t].desc}`} className="cursor-help">
+          {ENEMY_TRAITS[t].icon}
+        </span>
+      ))}
     </span>
   )
 }

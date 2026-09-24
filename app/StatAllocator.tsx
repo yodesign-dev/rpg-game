@@ -8,6 +8,7 @@ import {
   ATTRIBUTE_INFO,
   ATTRIBUTE_KEYS,
   attributeBonuses,
+  CRIT_CAP,
   type AttributeKey,
   type Attributes,
 } from '@/lib/character-stats'
@@ -137,7 +138,7 @@ export default function StatAllocator({
           label="CRIT"
           value={totals.crit}
           next={preview.crit}
-          format={(v) => `${(Math.min(0.75, v) * 100).toFixed(1)}%`}
+          format={(v) => `${(Math.min(CRIT_CAP, v) * 100).toFixed(1)}%`}
         />
       </div>
 

@@ -84,3 +84,16 @@ export function enemySprite(name: string): EnemySprite | null {
   const portrait = enemyPortraitSrc(base)
   return portrait ? { src: portrait, kind: 'humanoid' } : null
 }
+
+// Đặc tính quái (simulate_fight: p_enemy_traits). Mỗi vùng 1 đặc tính (zones.traits); Tinh Anh
+// thêm 1, Hung Thần thêm 2 ngẫu nhiên; boss luôn Cuồng Nộ; Tháp đổi đặc tính mỗi 5 tầng.
+export const ENEMY_TRAITS: Record<string, { icon: string; name: string; desc: string }> = {
+  armored: { icon: '🛡️', name: 'Giáp Cứng', desc: 'Chí mạng của bạn chỉ còn một nửa sức mạnh, không xuyên giáp' },
+  evasive: { icon: '💨', name: 'Né Tránh', desc: '15% đòn đánh của bạn bị trượt' },
+  savage: { icon: '🐺', name: 'Hung Bạo', desc: '15% đòn của quái là chí mạng ×1.5' },
+  enrage: { icon: '😡', name: 'Cuồng Nộ', desc: 'Dưới 50% HP, quái đánh mạnh hơn 30%' },
+  venom: { icon: '🐍', name: 'Độc', desc: 'Trúng đòn bị nhiễm độc: mất 2% HP tối đa mỗi lượt' },
+  regen: { icon: '💚', name: 'Tái Sinh', desc: 'Quái hồi 4% HP mỗi lượt' },
+  thorny: { icon: '🦔', name: 'Gai', desc: 'Phản lại 4% sát thương bạn gây ra' },
+  unholy: { icon: '🕯️', name: 'Ô Uế', desc: 'Hút máu của bạn giảm 50%' },
+}

@@ -11,6 +11,7 @@ export type ClassInfo = {
   base_atk: number
   base_def: number
   base_spd: number
+  base_crit?: number
   hp_per_level: number
   atk_per_level: number
   def_per_level: number
@@ -58,6 +59,7 @@ export default function ClassCard({ c, highlight = false }: { c: ClassInfo; high
       <p className="mt-2 text-xs text-[#8a93b0]">
         HP {c.base_hp} (+{c.hp_per_level}/cấp) · ATK {c.base_atk} (+{c.atk_per_level}) · DEF {c.base_def} (+
         {c.def_per_level}) · SPD {c.base_spd}
+        {c.base_crit != null && <> · CRIT khởi điểm {Math.round(c.base_crit * 100)}%</>}
       </p>
 
       <ul className="mt-3 space-y-1 text-xs">

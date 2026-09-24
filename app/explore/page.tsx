@@ -16,7 +16,7 @@ export default async function ExplorePage() {
     getCharacterStats(supabase, character.id),
     supabase
       .from('zones')
-      .select('id, key, name, icon, description, min_level, max_level, ap_cost, zone_enemies(name, level, is_boss)')
+      .select('id, key, name, icon, description, min_level, max_level, ap_cost, traits, zone_enemies(name, level, is_boss)')
       .order('sort_order'),
     supabase.from('zone_drops').select('zone_id, boss_only, item:items(key, name, icon, rarity)'),
     getSupplies(supabase, character.id),
@@ -40,6 +40,7 @@ export default async function ExplorePage() {
       minLevel: z.min_level,
       maxLevel: z.max_level,
       apCost: z.ap_cost,
+      traits: (z.traits ?? []) as string[],
       enemies: [...enemies].sort((a, b) => Number(a.is_boss) - Number(b.is_boss) || a.level - b.level),
       drops: drops.filter((d) => d.zone_id === z.id).map((d) => ({ ...d.item, bossOnly: d.boss_only })),
     }

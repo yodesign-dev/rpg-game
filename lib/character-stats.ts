@@ -46,6 +46,9 @@ export type Attributes = Record<AttributeKey, number>
 
 export const ATTRIBUTE_KEYS: AttributeKey[] = ['str', 'int', 'agi', 'dex', 'vit']
 
+// Trần chí mạng chung (simulate_fight). Mỗi class có chí mạng khởi điểm riêng (classes.base_crit).
+export const CRIT_CAP = 0.5
+
 // Mỗi cấp được bao nhiêu điểm — khớp với add_experience
 export const STAT_POINTS_PER_LEVEL = 3
 
@@ -56,14 +59,19 @@ export function attributeBonuses(mainStat: string, a: Attributes) {
     atk: mainStat in a ? a[mainStat as AttributeKey] : 0,
     def: Math.floor(a.vit / 2),
     hp: a.vit * 5,
-    crit: a.agi * 0.005 + a.dex * 0.003,
+    // Giảm dần: 0.3 × r / (r + 0.5), r = 0.5% AGI + 0.3% DEX — khớp attribute_bonuses
+    crit: critFromPoints(a.agi * 0.005 + a.dex * 0.003),
   }
+}
+
+function critFromPoints(r: number) {
+  return (0.3 * r) / (r + 0.5)
 }
 
 export const ATTRIBUTE_INFO: Record<AttributeKey, { label: string; name: string; effect: (isMain: boolean) => string }> = {
   str: { label: 'STR', name: 'Sức Mạnh', effect: (m) => (m ? '+1 ATK' : 'Không tăng ATK') },
   int: { label: 'INT', name: 'Trí Tuệ', effect: (m) => (m ? '+1 ATK phép' : 'Không tăng ATK') },
-  agi: { label: 'AGI', name: 'Nhanh Nhẹn', effect: (m) => (m ? '+1 ATK · +0.5% crit' : '+0.5% crit') },
-  dex: { label: 'DEX', name: 'Khéo Léo', effect: (m) => (m ? '+1 ATK · +0.3% crit' : '+0.3% crit') },
+  agi: { label: 'AGI', name: 'Nhanh Nhẹn', effect: (m) => (m ? '+1 ATK · +crit (giảm dần)' : '+crit (giảm dần)') },
+  dex: { label: 'DEX', name: 'Khéo Léo', effect: (m) => (m ? '+1 ATK · +crit ít hơn AGI' : '+crit ít hơn AGI') },
   vit: { label: 'VIT', name: 'Thể Lực', effect: () => '+5 HP · +1 DEF / 2 điểm' },
 }

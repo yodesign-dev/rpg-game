@@ -31,6 +31,13 @@ export type LastFight = {
     stun?: boolean
     stunned?: boolean
     dot?: boolean
+    // Đặc tính quái
+    miss?: boolean
+    reflect?: number
+    enemy_crit?: boolean
+    enraged?: boolean
+    poison?: number
+    regen?: number
   }[]
 }
 
@@ -57,7 +64,11 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
     <div className="mt-2 max-h-64 overflow-y-auto space-y-1 border-l border-white/[0.1] pl-3">
       {fight.log.map((e, i) => (
         <p key={i} className="text-xs leading-relaxed">
-          {e.actor === 'character' ? (
+          {e.actor === 'character' && e.miss ? (
+            <span className="text-[#7d7a8c]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> 💨 {e.skill} trượt — {fight.enemy} né được
+            </span>
+          ) : e.actor === 'character' ? (
             <span className="text-[#c9c4d4]">
               <span className="text-[#7d7a8c]">#{e.turn}</span> {e.double ? '⚡ Đòn Kép!' : e.echo ? '✨' : e.dot ? '☠️' : '⚔️'}{' '}
               {e.opening && <span className="text-[#f0c060]">Khai Cuộc! </span>}
@@ -65,6 +76,7 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
               <b className={e.crit ? 'text-[#f0c060]' : 'text-white'}>{e.damage}</b>
               {e.crit && ' (chí mạng!)'}
               {e.stun && <span className="text-[#8fc4e0]"> ❄️ đóng băng!</span>} · {fight.enemy} còn {e.enemy_hp_left} HP
+              {!!e.reflect && <span className="text-[#e09595]"> · 🦔 gai phản {e.reflect}</span>}
             </span>
           ) : e.actor === 'enemy' && e.stunned ? (
             <span className="text-[#8fc4e0]">
@@ -77,9 +89,12 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
             </span>
           ) : e.actor === 'enemy' ? (
             <span className="text-[#e09595]">
-              <span className="text-[#7d7a8c]">#{e.turn}</span> 🩸 {e.enemy_name} đánh {e.damage} · bạn còn{' '}
-              {e.character_hp_left} HP
+              <span className="text-[#7d7a8c]">#{e.turn}</span> {e.enraged && <b>😡 Cuồng Nộ! </b>}🩸 {e.enemy_name} đánh{' '}
+              <b className={e.enemy_crit ? 'text-[#ff8080]' : undefined}>{e.damage}</b>
+              {e.enemy_crit && ' (chí mạng!)'}
+              {!!e.poison && <span> · 🐍 độc −{e.poison}</span>} · bạn còn {e.character_hp_left} HP
               {!!e.thorns && <span className="text-[#f0c060]"> · 🌵 Phản Đòn {e.thorns}</span>}
+              {!!e.regen && <span className="text-[#8fe0b0]"> · 💚 quái hồi {e.regen}</span>}
             </span>
           ) : (
             <span className="text-[#f0c060]">⏱️ {e.message}</span>

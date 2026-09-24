@@ -4,13 +4,19 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
-import EnemyAvatar, { ENEMY_TIER_TEXT, enemyTier } from '../components/EnemyAvatar'
+import EnemyAvatar, { ENEMY_TIER_TEXT, EnemyTraits, enemyTier } from '../components/EnemyAvatar'
 import SupplyResult from '../components/SupplyResult'
 
 const AP_PER_FLOOR = 5
 const PREVIEW_FLOORS = 10
 
-type FloorEnemy = { out_idx: number; out_name: string; out_level: number; out_kind: 'normal' | 'elite' | 'boss' }
+type FloorEnemy = {
+  out_idx: number
+  out_name: string
+  out_level: number
+  out_kind: 'normal' | 'elite' | 'boss'
+  out_traits?: string[]
+}
 
 type ClimbFloor = {
   floor: number
@@ -27,6 +33,7 @@ type ClimbFloor = {
     hp_left: number
     dmg_taken: number
     log?: LastFight['log']
+    traits?: string[]
   }[]
 }
 
@@ -205,6 +212,7 @@ export default function TowerClimber({
                             {KIND_ICON[e.out_kind]} {e.out_name}
                           </span>
                           <span className="text-[#7d7a8c]">Lv{e.out_level}</span>
+                          <EnemyTraits traits={e.out_traits} />
                         </span>
                       ))
                     : '…'}
@@ -337,8 +345,8 @@ function EnemyRow({ floor, enemy: e, maxHp }: { floor: number; enemy: ClimbFloor
         <EnemyAvatar name={e.name} size={24} boss={e.kind === 'boss'} />
         <span className={ENEMY_TIER_TEXT[enemyTier(e.name, e.kind === 'boss')]}>
           {KIND_ICON[e.kind]} {e.name}
-        </span>{' '}
-        Lv{e.level} →{' '}
+        </span>
+        <EnemyTraits traits={e.traits} /> Lv{e.level} →{' '}
         <span className={e.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
           {e.result === 'win' ? 'hạ' : e.result === 'flee' ? 'rút lui' : 'gục'}
         </span>{' '}

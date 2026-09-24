@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
-import EnemyAvatar, { ENEMY_TIER_TEXT, enemyTier } from '../components/EnemyAvatar'
+import EnemyAvatar, { ENEMY_TIER_TEXT, EnemyTraits, enemyTier } from '../components/EnemyAvatar'
+import { ENEMY_TRAITS } from '@/lib/enemies'
 import SupplyResult from '../components/SupplyResult'
 
 
@@ -18,6 +19,7 @@ export type Zone = {
   minLevel: number
   maxLevel: number
   apCost: number
+  traits: string[]
   enemies: { name: string; level: number; is_boss: boolean }[]
   drops: { key: string; name: string; icon: string | null; rarity: string; bossOnly: boolean }[]
 }
@@ -36,6 +38,7 @@ type Fight = {
   potion?: string
   guard?: boolean
   log?: LastFight['log']
+  traits?: string[]
 }
 
 
@@ -198,9 +201,20 @@ export default function ExploreManager({
                       ))}
                     </div>
                   )}
+                  {z.traits.length > 0 && (
+                    <div className="space-y-0.5">
+                      {z.traits.map((t) => (
+                        <p key={t}>
+                          Đặc tính vùng: {ENEMY_TRAITS[t]?.icon}{' '}
+                          <span className="text-[#e5e1ed]">{ENEMY_TRAITS[t]?.name ?? t}</span>
+                          <span className="text-[#7d7a8c]"> — {ENEMY_TRAITS[t]?.desc}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[#7d7a8c]">
                     Quái thường có thể xuất hiện dạng <span className="text-[#8fc4e0]">Tinh Anh</span> hoặc hiếm hơn là{' '}
-                    <span className="text-[#f0c060]">Hung Thần</span> — mạnh hơn, thưởng lớn hơn.
+                    <span className="text-[#f0c060]">Hung Thần</span> — mạnh hơn, thêm 1–2 đặc tính, thưởng lớn hơn. Boss luôn Cuồng Nộ.
                   </p>
                   {z.drops.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
@@ -435,6 +449,7 @@ function TurnRow({
           {f.boss && '👑 '}
           {f.enemy} <span className="text-[#7d7a8c] font-normal">Lv{f.level}</span>
         </span>
+        <EnemyTraits traits={f.traits} />
         <span className="text-[#7d7a8c]">→</span>
         {f.result === 'win' ? (
           <span className="text-[#f0c060]">

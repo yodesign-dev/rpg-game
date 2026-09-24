@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { display, ui } from '@/app/fonts'
 import { getCurrentCharacter } from '@/lib/current-character'
 import { applyRegen } from '@/lib/regen'
-import { getCharacterStats } from '@/lib/character-stats'
+import { CRIT_CAP, getCharacterStats } from '@/lib/character-stats'
 import PortraitCard from './components/PortraitCard'
 import PortraitPicker from './hub/PortraitPicker'
 import SettingsMenu from './SettingsMenu'
@@ -195,7 +195,7 @@ export default async function CharacterPage() {
                 <StatCell label="ATK" value={stats.atk} />
                 <StatCell label="DEF" value={stats.def} />
                 <StatCell label="HP" value={stats.maxHp} />
-                <StatCell label="CRIT" value={`${(Math.min(0.75, stats.critBonus) * 100).toFixed(1)}%`} />
+                <StatCell label="CRIT" value={`${(Math.min(CRIT_CAP, stats.critBonus) * 100).toFixed(1)}%`} />
               </div>
               {(character.stat_points > 0 || talentPoints > 0) && (
                 <p className="mt-3 text-sm text-[#e3caf5]">
