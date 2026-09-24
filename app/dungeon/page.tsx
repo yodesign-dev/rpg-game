@@ -17,7 +17,7 @@ export default async function TowerPage() {
   return (
     <GlassPage
       title="Tháp Vực Sâu"
-      subtitle="100 tầng, càng lên cao càng khó. Mỗi tầng 5 AP, HP giữ nguyên (qua tầng hồi 20%). Điểm hồi sinh mỗi 10 tầng."
+      subtitle="100 tầng, càng lên cao càng khó. Mỗi tầng 5 AP, qua tầng hồi 20% HP, điểm hồi sinh mỗi 10 tầng. Gục ngã: mất 10% vàng và 15% EXP của cấp."
     >
       <SupplyBar
         characterId={character.id}

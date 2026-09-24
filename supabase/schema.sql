@@ -705,7 +705,7 @@ begin
   while v_exp >= v_exp_to_next loop
     v_exp := v_exp - v_exp_to_next;
     v_level := v_level + 1;
-    v_exp_to_next := 100 + (v_level - 1) * 50;
+    v_exp_to_next := round(2.5 * (100 + (v_level - 1) * 50));
     v_levels_gained := v_levels_gained + 1;
   end loop;
 
@@ -2000,7 +2000,7 @@ begin
     if tg_op = 'INSERT' then
       new.level := 1;
       new.exp := 0;
-      new.exp_to_next := 100;
+      new.exp_to_next := 250;
       new.gold := 100;
       new.current_chapter := 1;
       new.current_hp := null;
@@ -2429,6 +2429,7 @@ declare
   -- Tiếp tế: bình tự uống (tối đa 3/chuyến) + cuộn / bùa đang chờ
   v_auto_potion boolean; v_potions_left int := 0; v_potions_used int := 0; v_drink record;
   v_buff_exp boolean := false; v_buff_luck boolean := false; v_buff_guard boolean := false; v_guard_used boolean := false;
+  v_ap_spent int; v_pen_gold int := 0; v_pen_exp int := 0;
 begin
   select user_id into v_owner_user_id from characters where id = p_character_id;
 
@@ -2460,8 +2461,10 @@ begin
   end if;
 
   if v_current_ap < v_zone.ap_cost then
-    raise exception 'Không đủ AP để vào vùng này (cần % AP)', v_zone.ap_cost;
+    raise exception 'Không đủ AP để vào vùng này (cần % AP cho 10 trận)', v_zone.ap_cost;
   end if;
+  -- Vé AP tính cho mỗi 10 trận: số trận tối đa theo AP đang có
+  p_turns := least(p_turns, (v_current_ap / v_zone.ap_cost) * 10);
 
   select cs.out_a1_name, cs.out_a1_power, cs.out_a2_name, cs.out_a2_power,
          cs.out_dmg_reduction, cs.out_lifesteal, cs.out_crit
@@ -2479,7 +2482,7 @@ begin
     into v_buff_exp, v_buff_luck, v_buff_guard
   from character_buffs b where b.character_id = p_character_id;
   delete from character_buffs b where b.character_id = p_character_id;
-  v_potions_left := case when v_auto_potion then 3 else 0 end;
+  v_potions_left := case when v_auto_potion then 2 else 0 end;
 
   select exists (select 1 from zone_enemies ze where ze.zone_id = p_zone_id and ze.is_boss)
     into v_has_boss;
@@ -2598,10 +2601,11 @@ begin
   end loop;
 
   v_was_full_ap := (v_current_ap = v_max_ap);
+  v_ap_spent := v_zone.ap_cost * ceil(v_turns_completed / 10.0)::int;
 
   update characters
   set current_hp = greatest(1, v_hp),
-      current_ap = current_ap - v_zone.ap_cost,
+      current_ap = current_ap - v_ap_spent,
       gold = gold + v_gold_gained,
       last_ap_update = case when v_was_full_ap then now() else last_ap_update end
   where id = p_character_id;
@@ -2609,6 +2613,14 @@ begin
   if v_exp_gained > 0 then
     select ae.leveled_up, ae.new_level into v_leveled_up, v_new_level
     from add_experience(p_character_id, v_exp_gained) as ae;
+  end if;
+
+  -- Phạt khi gục: mất 10% vàng đang cầm và 15% EXP của cấp hiện tại (không tụt cấp)
+  if v_died then
+    select floor(c.gold * 0.10)::int, least(c.exp, round(c.exp_to_next * 0.15)::int)
+      into v_pen_gold, v_pen_exp
+    from characters c where c.id = p_character_id;
+    update characters c set gold = c.gold - v_pen_gold, exp = c.exp - v_pen_exp where c.id = p_character_id;
   end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -2646,7 +2658,9 @@ begin
     'new_level', coalesce(v_new_level, v_level),
     'hp_left', greatest(1, v_hp),
     'max_hp', v_max_hp,
-    'ap_left', v_current_ap - v_zone.ap_cost,
+    'ap_left', v_current_ap - v_ap_spent,
+    'ap_spent', v_ap_spent,
+    'penalty', jsonb_build_object('gold', v_pen_gold, 'exp', v_pen_exp),
     'drops', v_drops,
     'fights', v_fights,
     'last_fight', v_last_fight,
@@ -3568,9 +3582,10 @@ set search_path = 'public'
 as $$
 declare
   v_lvl int := greatest(1, least(100, p_floor));
-  v_tm numeric := 1 + v_lvl * 0.004;
-  v_hp numeric := 16 + 6 * v_lvl;
-  v_atk numeric := case when v_lvl < 15 then 3 + 1.5 * v_lvl else 8 + 1.2 * v_lvl end;
+  -- Khó hơn: HP ×(2 + 0.025 × tầng), ATK ×1.15, mỗi tầng +1% (trước 0.4%)
+  v_tm numeric := 1 + v_lvl * 0.01;
+  v_hp numeric := (16 + 6 * v_lvl) * (2 + 0.025 * v_lvl);
+  v_atk numeric := (case when v_lvl < 15 then 3 + 1.5 * v_lvl else 8 + 1.2 * v_lvl end) * 1.15;
   v_def numeric := 0.8 * v_lvl;
   v_name text;
   v_idx int := 0;
@@ -3587,7 +3602,7 @@ begin
     loop
       v_idx := v_idx + 1;
       return query select v_idx, v_name, v_lvl, 'boss',
-        round(v_hp * 2.5 * v_tm)::int, round(v_atk * 1.2 * v_tm)::int, round(v_def * 1.2)::int,
+        round(v_hp * 3 * v_tm)::int, round(v_atk * 1.25 * v_tm)::int, round(v_def * 1.2)::int,
         (1 + v_lvl) * 6, (1 + v_lvl) * 6;
     end loop;
     return;
@@ -3651,6 +3666,7 @@ declare
   v_mods jsonb; v_revived boolean;
   v_auto_potion boolean; v_potions_left int := 0; v_potions_used int := 0; v_drink record;
   v_buff_exp boolean := false; v_buff_luck boolean := false; v_buff_guard boolean := false; v_guard_used boolean := false;
+  v_pen_gold int := 0; v_pen_exp int := 0;
 begin
   select c.user_id into v_owner_user_id from characters c where c.id = p_character_id;
   if not found then raise exception 'Không tìm thấy nhân vật'; end if;
@@ -3694,7 +3710,7 @@ begin
     into v_buff_exp, v_buff_luck, v_buff_guard
   from character_buffs b where b.character_id = p_character_id;
   delete from character_buffs b where b.character_id = p_character_id;
-  v_potions_left := case when v_auto_potion then 3 else 0 end;
+  v_potions_left := case when v_auto_potion then 2 else 0 end;
 
   v_ap := v_current_ap;
   v_was_full_ap := (v_current_ap >= v_max_ap);
@@ -3849,6 +3865,14 @@ begin
     from add_experience(p_character_id, v_exp_total) ae;
   end if;
 
+  -- Phạt khi gục: mất 10% vàng đang cầm và 15% EXP của cấp hiện tại (không tụt cấp)
+  if v_stop = 'died' then
+    select floor(c.gold * 0.10)::int, least(c.exp, round(c.exp_to_next * 0.15)::int)
+      into v_pen_gold, v_pen_exp
+    from characters c where c.id = p_character_id;
+    update characters c set gold = c.gold - v_pen_gold, exp = c.exp - v_pen_exp where c.id = p_character_id;
+  end if;
+
   perform track_quest(p_character_id, 'kills', v_kills);
   perform track_quest(p_character_id, 'boss', v_bosses);
   perform track_quest(p_character_id, 'dungeon', v_cleared_count);
@@ -3868,6 +3892,7 @@ begin
     'max_hp', v_max_hp,
     'ap_left', v_ap,
     'ap_per_floor', c_ap_per_floor,
+    'penalty', jsonb_build_object('gold', v_pen_gold, 'exp', v_pen_exp),
     'floors', v_floors,
     'last_fight', v_last_fight,
     'potions_used', v_potions_used,
@@ -4842,3 +4867,21 @@ end;
 $$;
 
 revoke execute on function public.drink_best_potion(uuid, int, int) from public, anon, authenticated;
+
+-- ============================================================================
+-- CÂN BẰNG HARDCORE (chạy sau seed: class, skill, quái vùng, mốc EXP)
+-- ============================================================================
+
+-- Class: bớt khoảng cách máu mỏng / máu trâu (quái trâu hơn → trận dài hơn → HP quyết định)
+update classes c set base_hp = v.hp, base_def = v.def
+from (values ('warrior', 120, 10), ('mage', 95, 8), ('archer', 115, 11), ('assassin', 120, 10)) as v(key, hp, def)
+where c.key = v.key;
+update skills set effect = '{"lifesteal": 0.12}'::jsonb, description = '140% ATK, hồi HP bằng 12% sát thương gây ra'
+where key = 'warrior_drain';
+update skills set power_multiplier = 1.6, description = '160% ATK, xuyên 50% DEF' where key = 'archer_pierce';
+
+-- Quái vùng: HP ×(2 + 0.025 × cấp), ATK ×1.15 (chạy 1 lần — nhân trên chỉ số đang có)
+update zone_enemies set hp = round(hp * (2 + 0.025 * level)), atk = round(atk * 1.15);
+
+-- Đường EXP gấp 2.5 lần: cập nhật mốc của nhân vật hiện có (giữ EXP đang tích)
+update characters set exp_to_next = round(2.5 * (100 + (level - 1) * 50));

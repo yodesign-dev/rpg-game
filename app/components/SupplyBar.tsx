@@ -10,7 +10,7 @@ const BUFF_LABEL: Record<string, string> = {
   guard: '🛡️ Bùa Hộ Mệnh',
 }
 
-// Tiếp tế trước khi đi: bật/tắt tự uống bình (tối đa 3/chuyến), số bình trong túi, cuộn/bùa đang chờ
+// Tiếp tế trước khi đi: bật/tắt tự uống bình (tối đa 2/chuyến), số bình trong túi, cuộn/bùa đang chờ
 export default function SupplyBar({
   characterId,
   autoPotion,
@@ -39,7 +39,7 @@ export default function SupplyBar({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex cursor-pointer items-center gap-2 text-[#c9c4d4]">
           <input type="checkbox" checked={auto} disabled={busy} onChange={toggle} className="accent-[#8fe0b0]" />
-          🧪 Tự uống bình khi HP &lt; 35% <span className="text-[#7d7a8c]">(tối đa 3 · có {potionCount} bình)</span>
+          🧪 Tự uống bình khi HP &lt; 35% <span className="text-[#7d7a8c]">(tối đa 2 · có {potionCount} bình)</span>
         </label>
         <Link href="/market" className="text-[#a29fb3] hover:text-white">
           Mua thêm →

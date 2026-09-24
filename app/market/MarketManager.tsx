@@ -91,7 +91,7 @@ export default function MarketManager({
   const sections = [
     {
       title: '🧪 TIẾP TẾ',
-      note: 'Bình máu tự uống trong khám phá / tháp khi HP dưới 35% (tối đa 3 bình mỗi chuyến).',
+      note: 'Bình máu tự uống trong khám phá / tháp khi HP dưới 35% (tối đa 2 bình mỗi chuyến).',
       rows: items.filter((i) => !i.buff_key),
     },
     {

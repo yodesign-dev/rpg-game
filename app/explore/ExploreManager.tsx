@@ -54,6 +54,8 @@ type ExploreResult = {
   hp_left: number
   max_hp: number
   ap_left: number
+  ap_spent?: number
+  penalty?: { gold: number; exp: number }
   drops: { key: string; name: string; icon: string | null; rarity: string; quantity: number }[]
   fights: Fight[]
   last_fight: LastFight | null
@@ -106,6 +108,9 @@ export default function ExploreManager({
 
   const zone = zones.find((z) => z.id === selectedId) ?? null
   const exhausted = localHp <= 1
+  // Vé AP tính cho mỗi 10 trận (khớp explore_zone)
+  const apCostFor = (n: number) => (zone ? zone.apCost * Math.ceil(n / 10) : 0)
+  const maxTurnsByAp = zone ? Math.min(100, Math.floor(localAp / zone.apCost) * 10) : 0
   const lackAp = zone ? localAp < zone.apCost : true
 
   async function explore() {
@@ -171,7 +176,7 @@ export default function ExploreManager({
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${danger.cls}`}>{danger.label}</span>
-                  <span className="text-xs text-[#a29fb3]">{z.apCost} AP</span>
+                  <span className="text-xs text-[#a29fb3]">{z.apCost} AP/10 trận</span>
                 </div>
               </div>
 
@@ -263,8 +268,8 @@ export default function ExploreManager({
             : exhausted
               ? 'Kiệt sức — chờ hồi HP'
               : lackAp
-                ? `Thiếu AP (cần ${zone.apCost})`
-                : `Thám hiểm ${turns} lượt · −${zone.apCost} AP`}
+                ? `Thiếu AP (cần ${zone.apCost} cho 10 trận)`
+                : `Thám hiểm ${Math.min(turns, maxTurnsByAp)} lượt · −${apCostFor(Math.min(turns, maxTurnsByAp))} AP`}
       </button>
 
       {error && <p className="text-sm text-[#e09595] mt-3">{error}</p>}
@@ -332,6 +337,11 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
           <span className="text-[#7d7a8c]"> · hồi 2%/phút</span>
         </p>
         <SupplyResult potionsUsed={result.potions_used} guardUsed={result.guard_used} buffs={result.buffs} />
+        {!!(result.penalty && (result.penalty.gold || result.penalty.exp)) && (
+          <p className="text-[#e09595]">
+            💀 Phạt khi gục: −{result.penalty.gold.toLocaleString('vi-VN')} vàng · −{result.penalty.exp} EXP
+          </p>
+        )}
         {result.died && <p className="text-[#e09595]">Trận cuối gục ngã nên không có thưởng.</p>}
         {result.leveled_up && (
           <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}! Vào trang nhân vật để cộng điểm chỉ số.</p>

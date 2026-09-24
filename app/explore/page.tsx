@@ -49,7 +49,7 @@ export default async function ExplorePage() {
     <GlassPage
       back
       title="Thám Hiểm"
-      subtitle="Chọn vùng và số lượt. AP chỉ trừ một lần khi vào vùng — đánh tới khi đủ lượt hoặc hết HP."
+      subtitle="Mỗi 10 trận tốn 1 vé AP của vùng. Gục ngã: mất 10% vàng đang cầm và 15% EXP của cấp hiện tại."
     >
       {(zonesError || zones.length === 0) && (
         <p className={`${ui.className} text-sm text-[#e09595] mb-4`}>

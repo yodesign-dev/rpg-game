@@ -38,6 +38,7 @@ type ClimbResult = {
   hp_left: number
   max_hp: number
   ap_left: number
+  penalty?: { gold: number; exp: number }
   floors: ClimbFloor[]
   last_fight: { floor: number; enemy: string; log: LastFight['log'] } | null
 }
@@ -305,6 +306,11 @@ function ClimbReport({ result }: { result: ClimbResult }) {
           🗼 Tầng cao nhất: {result.tower_best} · ❤️ HP còn {result.hp_left}/{result.max_hp} · ⚡ AP còn {result.ap_left}
         </p>
         <SupplyResult potionsUsed={result.potions_used} guardUsed={result.guard_used} buffs={result.buffs} />
+        {!!(result.penalty && (result.penalty.gold || result.penalty.exp)) && (
+          <p className="text-[#e09595]">
+            💀 Phạt khi gục: −{result.penalty.gold.toLocaleString('vi-VN')} vàng · −{result.penalty.exp} EXP
+          </p>
+        )}
         {result.leveled_up && <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}!</p>}
         {drops.length > 0 && (
           <p className="text-[#a29fb3]">🎁 Nhặt được {drops.reduce((n, d) => n + d.qty, 0)} vật phẩm — xem trong Túi Đồ</p>
