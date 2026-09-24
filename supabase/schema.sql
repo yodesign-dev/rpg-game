@@ -2404,6 +2404,10 @@ declare
   v_enemy zone_enemies%rowtype;
   v_has_boss boolean;
   v_is_boss boolean;
+  -- Cấp quái thường: Tinh Anh / Hung Thần (boss không tung cấp)
+  v_tier text; v_tier_roll numeric; v_name text;
+  v_e_hp int; v_e_atk int; v_e_def int;
+  v_reward_mult numeric; v_drop_mult numeric;
   v_exp_multiplier numeric; v_damage_multiplier numeric;
   v_win boolean; v_timed_out boolean;
   v_dmg_taken int; v_fight_log jsonb;
@@ -2503,6 +2507,22 @@ begin
 
     if not found then raise exception 'Vùng này chưa có quái'; end if;
 
+    -- Tung cấp: 2% Hung Thần, 10% Tinh Anh. Tên hiển thị mang tiền tố cấp (web tra ảnh theo tên).
+    v_tier := 'normal';
+    if not v_is_boss then
+      v_tier_roll := random();
+      if v_tier_roll < 0.02 then v_tier := 'champion';
+      elsif v_tier_roll < 0.12 then v_tier := 'elite';
+      end if;
+    end if;
+
+    v_name := case v_tier when 'elite' then 'Tinh Anh ' when 'champion' then 'Hung Thần ' else '' end || v_enemy.name;
+    v_e_hp := round(v_enemy.hp * case v_tier when 'elite' then 2 when 'champion' then 3 else 1 end);
+    v_e_atk := round(v_enemy.atk * case v_tier when 'elite' then 1.15 when 'champion' then 1.3 else 1 end);
+    v_e_def := round(v_enemy.def * case v_tier when 'elite' then 1.15 when 'champion' then 1.25 else 1 end);
+    v_reward_mult := case v_tier when 'elite' then 2.5 when 'champion' then 4 else 1 end;
+    v_drop_mult := case v_tier when 'elite' then 1.5 when 'champion' then 2 else 1 end;
+
     select exp_multiplier, damage_multiplier into v_exp_multiplier, v_damage_multiplier
     from calculate_combat_scaling(v_level, v_enemy.level);
 
@@ -2512,7 +2532,7 @@ begin
       v_char_atk, v_char_def, v_hp, v_max_hp,
       v_crit_chance, v_lifesteal, v_dmg_reduction,
       v_a1_name, v_a1_power, v_a2_name, v_a2_power,
-      v_enemy.name, v_enemy.hp, v_enemy.atk, v_enemy.def,
+      v_name, v_e_hp, v_e_atk, v_e_def,
       v_damage_multiplier, true, v_effects, v_mods,
       v_enemy.level - v_level
     ) f;
@@ -2522,7 +2542,7 @@ begin
     if v_revived then v_mods := v_mods - 'revive'; end if;
 
     v_last_fight := jsonb_build_object(
-      'turn', v_turn, 'enemy', v_enemy.name, 'level', v_enemy.level, 'boss', v_is_boss, 'log', v_fight_log
+      'turn', v_turn, 'enemy', v_name, 'level', v_enemy.level, 'boss', v_is_boss, 'log', v_fight_log
     );
 
     v_fight_exp := 0; v_fight_gold := 0;
@@ -2537,8 +2557,8 @@ begin
           'boss', v_enemy.name, 'where', v_zone.icon || ' ' || v_zone.name, 'source', 'explore'
         ));
       end if;
-      v_fight_exp := round(v_enemy.reward_exp * v_exp_multiplier * case when v_buff_exp then 1.25 else 1 end);
-      v_fight_gold := round(v_enemy.reward_gold * v_exp_multiplier);
+      v_fight_exp := round(v_enemy.reward_exp * v_reward_mult * v_exp_multiplier * case when v_buff_exp then 1.25 else 1 end);
+      v_fight_gold := round(v_enemy.reward_gold * v_reward_mult * v_exp_multiplier);
       v_exp_gained := v_exp_gained + v_fight_exp;
       v_gold_gained := v_gold_gained + v_fight_gold;
 
@@ -2547,8 +2567,9 @@ begin
         from zone_drops zd join items i on i.id = zd.item_id
         where zd.zone_id = p_zone_id and (not zd.boss_only or v_is_boss)
       loop
-        continue when random() >= v_drop.drop_rate * case when v_buff_luck then 1.3 else 1 end;
-        v_drop_rarity := grant_drop(p_character_id, v_drop.item_id, v_is_boss);
+        continue when random() >= v_drop.drop_rate * v_drop_mult * case when v_buff_luck then 1.3 else 1 end;
+        -- Hung Thần tung độ hiếm trang bị như boss
+        v_drop_rarity := grant_drop(p_character_id, v_drop.item_id, v_is_boss or v_tier = 'champion');
         v_fight_drops := v_fight_drops || jsonb_build_object('key', v_drop.key, 'rarity', v_drop_rarity);
         -- Gộp theo cặp item|tier (cùng 1 món có thể rơi ra nhiều tier khác nhau)
         v_drop_counts := jsonb_set(
@@ -2560,9 +2581,10 @@ begin
 
     v_fights := v_fights || jsonb_build_object(
       'turn', v_turn,
-      'enemy', v_enemy.name,
+      'enemy', v_name,
       'level', v_enemy.level,
       'boss', v_is_boss,
+      'tier', v_tier,
       'result', case when v_win then 'win' when v_timed_out then 'flee' else 'lose' end,
       'hp_left', v_hp,
       'dmg_taken', v_dmg_taken,
@@ -2692,22 +2714,22 @@ select z.id, e.name, e.lvl,
        e.weight, e.boss
 from (values
   ('rung_xanh', 'Slime Xanh', 1, 40, false),
-  ('rung_xanh', 'Thỏ Hoang', 2, 30, false),
+  ('rung_xanh', 'Rắn Cỏ', 2, 30, false),
   ('rung_xanh', 'Sói Rừng', 4, 20, false),
-  ('rung_xanh', 'Nấm Độc', 5, 10, false),
+  ('rung_xanh', 'Yêu Tinh Rừng', 5, 10, false),
   ('rung_xanh', 'Tinh Linh Cổ Thụ', 6, 1, true),
-  ('dong_bang', 'Chuột Đồng', 3, 40, false),
+  ('dong_bang', 'Sâu Đồng', 3, 40, false),
   ('dong_bang', 'Bù Nhìn Ma', 5, 30, false),
   ('dong_bang', 'Lợn Rừng', 7, 20, false),
   ('dong_bang', 'Ong Bắp Cày', 8, 10, false),
   ('dong_bang', 'Vua Châu Chấu', 9, 1, true),
-  ('hang_dong', 'Dơi Hang', 6, 40, false),
+  ('hang_dong', 'Bọ Giáp Hang', 6, 40, false),
   ('hang_dong', 'Goblin Thợ Mỏ', 8, 30, false),
   ('hang_dong', 'Nhện Hang', 10, 20, false),
   ('hang_dong', 'Orc', 12, 10, false),
   ('hang_dong', 'Ancient Golem', 13, 1, true),
   ('nui_tuyet', 'Sói Tuyết', 10, 40, false),
-  ('nui_tuyet', 'Người Tuyết', 13, 30, false),
+  ('nui_tuyet', 'Hồn Ma Băng', 13, 30, false),
   ('nui_tuyet', 'Yeti', 15, 20, false),
   ('nui_tuyet', 'Pháp Sư Băng', 18, 10, false),
   ('nui_tuyet', 'Rồng Băng Non', 19, 1, true)
@@ -2843,7 +2865,7 @@ from (values
   ('hon_nguyen', 'Rồng Nguyên Tố', 74, 10, false),
   ('hon_nguyen', 'Mẹ Hỗn Nguồn', 76, 1, true),
   ('thien_duong', 'Thiên Sứ Hộ Vệ', 72, 40, false),
-  ('thien_duong', 'Phượng Hoàng', 75, 30, false),
+  ('thien_duong', 'Thiên Nhãn', 75, 30, false),
   ('thien_duong', 'Kỵ Sĩ Mây', 78, 20, false),
   ('thien_duong', 'Tổng Lãnh Thiên Thần', 80, 10, false),
   ('thien_duong', 'Đấng Sáng Thế', 81, 1, true)

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
-import EnemyFace from '../components/EnemyFace'
+import EnemyAvatar, { ENEMY_TIER_TEXT, enemyTier } from '../components/EnemyAvatar'
 import SupplyResult from '../components/SupplyResult'
 
 
@@ -18,7 +18,7 @@ export type Zone = {
   minLevel: number
   maxLevel: number
   apCost: number
-  boss: string | null
+  enemies: { name: string; level: number; is_boss: boolean }[]
   drops: { key: string; name: string; icon: string | null; rarity: string; bossOnly: boolean }[]
 }
 
@@ -183,11 +183,24 @@ export default function ExploreManager({
               {selected && (
                 <div className="mt-3 pt-3 border-t border-white/[0.08] text-xs text-[#a29fb3] space-y-1.5">
                   {z.description && <p>{z.description}</p>}
-                  {z.boss && (
-                    <p>
-                      Boss hiếm: <span className="text-[#f0a8a8]">{z.boss}</span> (Lv {z.maxLevel + 1})
-                    </p>
+                  {z.enemies.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {z.enemies.map((e) => (
+                        <span key={e.name} className="flex w-16 flex-col items-center gap-1 text-center">
+                          <EnemyAvatar name={e.name} size={48} boss={e.is_boss} />
+                          <span className={`leading-tight ${e.is_boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
+                            {e.is_boss && '👑 '}
+                            {e.name}
+                          </span>
+                          <span className="text-[#7d7a8c]">Lv{e.level}</span>
+                        </span>
+                      ))}
+                    </div>
                   )}
+                  <p className="text-[#7d7a8c]">
+                    Quái thường có thể xuất hiện dạng <span className="text-[#8fc4e0]">Tinh Anh</span> hoặc hiếm hơn là{' '}
+                    <span className="text-[#f0c060]">Hung Thần</span> — mạnh hơn, thưởng lớn hơn.
+                  </p>
                   {z.drops.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {z.drops.map((d) => (
@@ -284,6 +297,10 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
   const [showLastFight, setShowLastFight] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const bosses = result.fights.filter((f) => f.boss && f.result === 'win').length
+  // Chạm trán đáng chú ý: Hung Thần + boss hiện ảnh lớn; Tinh Anh chỉ đếm
+  const notable = result.fights.filter((f) => ['champion', 'boss'].includes(enemyTier(f.enemy, f.boss)))
+  const elites = result.fights.filter((f) => enemyTier(f.enemy, f.boss) === 'elite')
+  const elitesWon = elites.filter((f) => f.result === 'win').length
   const dropInfo = Object.fromEntries(result.drops.map((d) => [d.key, d]))
 
   // Cuộn tới lượt cuối — thường là lượt người chơi quan tâm nhất
@@ -299,6 +316,29 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
           {' '}— {zone.icon} {zone.name} (Lv{zone.minLevel}–{zone.maxLevel}) · {result.turns_completed}/{result.turns_requested} lượt
         </span>
       </p>
+
+      {(notable.length > 0 || elites.length > 0) && (
+        <div className="mt-3 rounded-xl bg-black/20 border border-white/[0.06] p-3">
+          {notable.length > 0 && (
+            <div className="flex flex-wrap gap-3 mb-2">
+              {notable.map((f) => (
+                <div key={f.turn} className="flex w-20 flex-col items-center gap-1 text-center text-xs">
+                  <EnemyAvatar name={f.enemy} size={64} boss={f.boss} />
+                  <span className={`leading-tight ${ENEMY_TIER_TEXT[enemyTier(f.enemy, f.boss)]}`}>{f.enemy}</span>
+                  <span className={f.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
+                    T{f.turn} · {f.result === 'win' ? 'hạ' : f.result === 'flee' ? 'rút lui' : 'gục'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {elites.length > 0 && (
+            <p className="text-xs text-[#a29fb3]">
+              <span className="text-[#8fc4e0]">Tinh Anh</span>: gặp {elites.length}, hạ {elitesWon}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Log từng lượt */}
       <div
@@ -380,11 +420,11 @@ function TurnRow({
 
   return (
     <div className={`px-3 py-2 text-xs ${f.result === 'lose' ? 'bg-[#e07070]/[0.08]' : ''}`}>
-      <div className="flex items-baseline gap-1.5 flex-wrap">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <span>{f.result === 'win' ? '✅' : f.result === 'flee' ? '⏱️' : '💀'}</span>
         <b className="text-white">T{f.turn}</b>
-        <EnemyFace name={f.enemy} size={18} />
-        <span className={f.boss ? 'text-[#f0a8a8] font-semibold' : 'text-[#e5e1ed]'}>
+        <EnemyAvatar name={f.enemy} size={24} boss={f.boss} />
+        <span className={ENEMY_TIER_TEXT[enemyTier(f.enemy, f.boss)]}>
           {f.boss && '👑 '}
           {f.enemy} <span className="text-[#7d7a8c] font-normal">Lv{f.level}</span>
         </span>

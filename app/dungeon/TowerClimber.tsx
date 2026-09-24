@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
-import EnemyFace from '../components/EnemyFace'
+import EnemyAvatar, { ENEMY_TIER_TEXT, enemyTier } from '../components/EnemyAvatar'
 import SupplyResult from '../components/SupplyResult'
 
 const AP_PER_FLOOR = 5
@@ -186,14 +186,17 @@ export default function TowerClimber({
             const enemies = preview[f]
             const boss = f % 10 === 0
             return (
-              <li key={f} className={`flex gap-2 text-xs ${boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
+              <li key={f} className={`flex items-center gap-2 text-xs ${boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
                 <span className={`w-12 shrink-0 ${f <= best ? 'text-[#7d7a8c]' : 'text-white'}`}>T{f}</span>
                 <span className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
                   {enemies
                     ? enemies.map((e) => (
                         <span key={e.out_idx} className="inline-flex items-center gap-1.5">
-                          <EnemyFace name={e.out_name} size={boss ? 28 : 20} />
-                          {KIND_ICON[e.out_kind]} {e.out_name} Lv{e.out_level}
+                          <EnemyAvatar name={e.out_name} size={boss ? 40 : 32} boss={e.out_kind === 'boss'} />
+                          <span className={ENEMY_TIER_TEXT[enemyTier(e.out_name, e.out_kind === 'boss')]}>
+                            {KIND_ICON[e.out_kind]} {e.out_name}
+                          </span>
+                          <span className="text-[#7d7a8c]">Lv{e.out_level}</span>
                         </span>
                       ))
                     : '…'}
@@ -263,8 +266,11 @@ function ClimbReport({ result }: { result: ClimbResult }) {
             <div className="mt-1 space-y-0.5">
               {f.enemies.map((e, i) => (
                 <p key={i} className="flex flex-wrap items-center gap-x-1 text-[#a29fb3]">
-                  <EnemyFace name={e.name} size={18} />
-                  {KIND_ICON[e.kind]} {e.name} Lv{e.level} →{' '}
+                  <EnemyAvatar name={e.name} size={24} boss={e.kind === 'boss'} />
+                  <span className={ENEMY_TIER_TEXT[enemyTier(e.name, e.kind === 'boss')]}>
+                    {KIND_ICON[e.kind]} {e.name}
+                  </span>{' '}
+                  Lv{e.level} →{' '}
                   <span className={e.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
                     {e.result === 'win' ? 'hạ' : e.result === 'flee' ? 'rút lui' : 'gục'}
                   </span>{' '}

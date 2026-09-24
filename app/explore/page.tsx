@@ -40,7 +40,7 @@ export default async function ExplorePage() {
       minLevel: z.min_level,
       maxLevel: z.max_level,
       apCost: z.ap_cost,
-      boss: enemies.find((e) => e.is_boss)?.name ?? null,
+      enemies: [...enemies].sort((a, b) => Number(a.is_boss) - Number(b.is_boss) || a.level - b.level),
       drops: drops.filter((d) => d.zone_id === z.id).map((d) => ({ ...d.item, bossOnly: d.boss_only })),
     }
   })
