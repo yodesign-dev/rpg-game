@@ -64,6 +64,8 @@ export default function MarketManager({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [qty, setQty] = useState<Record<string, number>>({})
+  const [sectionKey, setSectionKey] = useState('supply')
+  const [openId, setOpenId] = useState<string | null>(null)  // dòng đang mở mô tả đầy đủ
 
   // Số lượng tối đa mua được: theo vàng, lượt còn lại hôm nay, trần 99
   function maxQty(item: ShopItem) {
@@ -109,32 +111,50 @@ export default function MarketManager({
 
   const sections = [
     {
-      title: '🧪 TIẾP TẾ',
+      key: 'supply',
+      title: '🧪 Tiếp tế',
       note: 'Bình máu tự uống trong khám phá / tháp khi HP dưới 35% (tối đa 2 bình mỗi chuyến).',
       rows: items.filter((i) => !i.buff_key && !i.net_tier),
     },
     {
-      title: '🕸️ LƯỚI BẮT PET',
+      key: 'net',
+      title: '🕸️ Lưới pet',
       note: 'Ném vào pet hoang dã gặp khi Thám Hiểm (trang Pet). Lưới xịn hơn bắt pet hiếm dễ hơn.',
       rows: items.filter((i) => i.net_tier),
     },
     {
-      title: '📜 CUỘN & BÙA',
+      key: 'buff',
+      title: '📜 Cuộn & Bùa',
       note: 'Dùng từ Túi Đồ trước khi đi — hiệu lực cho chuyến khám phá hoặc lần leo tháp kế tiếp.',
       rows: items.filter((i) => i.buff_key),
     },
   ].filter((s) => s.rows.length > 0)
+  const section = sections.find((s) => s.key === sectionKey) ?? sections[0]
 
   return (
-    <div className={`${ui.className} space-y-6`}>
+    <div className={`${ui.className} space-y-3`}>
       {error && <p className="text-xs text-[#e09595] text-center">{error}</p>}
       {notice && <p className="text-xs text-[#8fe0b0] text-center">{notice}</p>}
 
-      {sections.map((section) => (
-        <section key={section.title}>
-          <h2 className="text-xs font-semibold tracking-[2px] text-[#a29fb3]">{section.title}</h2>
-          <p className="mb-3 mt-1 text-xs text-[#7d7a8c]">{section.note}</p>
-          <div className="grid gap-3 sm:grid-cols-2">
+      <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
+        {sections.map((sec) => (
+          <button
+            key={sec.key}
+            onClick={() => setSectionKey(sec.key)}
+            className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs transition-colors ${
+              sec.key === section.key
+                ? 'border-[#8fe0b0]/60 bg-[#8fe0b0]/15 text-[#c8f5dc]'
+                : 'border-white/10 text-[#a29fb3] hover:text-white'
+            }`}
+          >
+            {sec.title} <span className="text-[#7d7a8c]">{sec.rows.length}</span>
+          </button>
+        ))}
+      </div>
+
+      <section>
+          <p className="mb-2 text-[11px] text-[#7d7a8c]">{section.note}</p>
+          <div className="grid gap-1.5 sm:grid-cols-2">
             {section.rows.map((item) => {
               const price = shopPrice(item, level)
               const left = item.daily_limit == null ? null : Math.max(0, item.daily_limit - (bought[item.id] ?? 0))
@@ -144,36 +164,43 @@ export default function MarketManager({
               const n = multi ? Math.min(qty[item.id] ?? 1, Math.max(1, max)) : 1
               const canBuy = localGold >= price * n && left !== 0
               const isPending = pendingItemId === item.id
+              const open = openId === item.id
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4"
+                  className="flex items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-2"
                 >
                   {item.icon && (
                     <div
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border ${
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${
                         RARITY_BORDER[item.rarity] ?? RARITY_BORDER.common
                       } bg-[#0b0a10]`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element -- icon pixel 32-64 px */}
-                      <img src={`/items/${item.icon}`} alt="" className="h-9 w-9 [image-rendering:pixelated]" />
+                      <img src={`/items/${item.icon}`} alt="" className="h-7 w-7 [image-rendering:pixelated]" />
                     </div>
                   )}
-                  <div className="min-w-0 flex-1">
-                    <p className={`font-semibold ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}>{item.name}</p>
-                    {item.description && <p className="mt-0.5 text-xs text-[#a29fb3]">{item.description}</p>}
-                    <p className="mt-1 text-xs text-[#7d7a8c]">
-                      {left !== null && `Còn ${left}/${item.daily_limit} hôm nay`}
-                      {waiting && <span className="text-[#8fe0b0]"> · đang chờ dùng</span>}
+                  <button type="button" onClick={() => setOpenId(open ? null : item.id)} className="min-w-0 flex-1 text-left">
+                    <p className={`truncate text-[13px] font-semibold leading-tight ${RARITY_COLOR[item.rarity] ?? RARITY_COLOR.common}`}>
+                      {item.name}
                     </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {item.description && (
+                      <p className={`text-[11px] leading-snug text-[#a29fb3] ${open ? '' : 'truncate'}`}>{item.description}</p>
+                    )}
+                    {(left !== null || waiting) && (
+                      <p className="text-[11px] leading-snug text-[#7d7a8c]">
+                        {left !== null && `Còn ${left}/${item.daily_limit} hôm nay`}
+                        {waiting && <span className="text-[#8fe0b0]"> · đang chờ dùng</span>}
+                      </p>
+                    )}
+                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
                     {multi && left !== 0 && (
                       <div className="flex items-center gap-1 text-xs">
                         <button
                           onClick={() => setItemQty(item, n - 1)}
                           disabled={n <= 1 || isPending}
-                          className="h-7 w-7 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
+                          className="h-6 w-6 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
                         >
                           −
                         </button>
@@ -185,20 +212,20 @@ export default function MarketManager({
                           value={n}
                           onChange={(e) => setItemQty(item, Number(e.target.value))}
                           disabled={isPending}
-                          className="h-7 w-11 rounded-md border border-white/15 bg-[#0b0a10] text-center text-[#e8e4f0]
+                          className="h-6 w-9 rounded-md border border-white/15 bg-[#0b0a10] text-center text-[#e8e4f0]
                           [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                         />
                         <button
                           onClick={() => setItemQty(item, n + 1)}
                           disabled={n >= max || isPending}
-                          className="h-7 w-7 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
+                          className="h-6 w-6 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
                         >
                           +
                         </button>
                         <button
                           onClick={() => setItemQty(item, max)}
                           disabled={max <= 1 || n >= max || isPending}
-                          className="h-7 rounded-md border border-white/15 px-1.5 text-[10px] text-[#a29fb3] hover:bg-white/10 disabled:opacity-30"
+                          className="h-6 rounded-md border border-white/15 px-1 text-[10px] text-[#a29fb3] hover:bg-white/10 disabled:opacity-30"
                         >
                           MAX
                         </button>
@@ -207,7 +234,7 @@ export default function MarketManager({
                     <button
                       onClick={() => buy(item, n)}
                       disabled={!canBuy || isPending}
-                      className="shrink-0 whitespace-nowrap rounded-lg border border-[#e0b050]/60 px-3 py-2 text-xs text-[#f1dba0]
+                      className="shrink-0 whitespace-nowrap rounded-lg border border-[#e0b050]/60 px-2.5 py-1 text-xs text-[#f1dba0]
                       transition-colors hover:bg-[#e0b050]/15 disabled:opacity-30"
                     >
                       {isPending ? '…' : left === 0 ? 'Hết lượt' : `🪙 ${(price * n).toLocaleString('vi-VN')}`}
@@ -217,8 +244,7 @@ export default function MarketManager({
               )
             })}
           </div>
-        </section>
-      ))}
+      </section>
     </div>
   )
 }

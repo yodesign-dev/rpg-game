@@ -40,6 +40,9 @@ const RARITY_LABEL: Record<string, string> = {
 
 // Tier của từng món: đồ rơi/chế tạo có tier riêng (inventory.rarity), đồ mua ở
 // chợ và vật phẩm gộp chồng thì dùng tier gốc của loại đồ.
+// Túi đồ hiện từng trang để danh sách không kéo quá dài
+const BAG_PAGE = 30
+
 function tierOf(row: { rarity: string | null; items: { rarity: string } }) {
   return row.rarity ?? row.items.rarity
 }
@@ -265,6 +268,7 @@ export default function InventoryManager({
   const [showEquipped, setShowEquipped] = useState(true)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [craftFilter, setCraftFilter] = useState<string>('all')
+  const [bagLimit, setBagLimit] = useState(BAG_PAGE)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [craftableOnly, setCraftableOnly] = useState(false)
   const [rows, setRows] = useState<InventoryRow[]>(items)
@@ -717,38 +721,37 @@ export default function InventoryManager({
         type="button"
         onClick={() => (sellMode ? selectable && toggleRow(row.id) : setDetailId(row.id))}
         disabled={sellMode && !selectable}
-        className={`${ui.className} relative text-left rounded-xl border border-white/[0.08] border-l-4 p-3 transition-colors
+        className={`${ui.className} flex w-full items-center gap-2.5 text-left rounded-lg border border-white/[0.07] border-l-4 px-2.5 py-1.5 transition-colors
           ${RARITY_ACCENT[isGear ? tier : 'common']}
           ${picked ? 'bg-[#e0b050]/15 border-[#e0b050]/60' : row.equipped ? 'bg-[#8fe0b0]/[0.06]' : 'bg-white/[0.04] hover:bg-white/[0.08]'}
           ${sellMode && !selectable ? 'opacity-40' : ''}`}
       >
-        <div className="flex items-start gap-2.5">
-          <div
-            className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common} bg-[#0b0a10]
-              flex items-center justify-center shrink-0`}
-          >
-            {item.icon ? (
-              <img src={`/items/${item.icon}`} alt="" className="w-8 h-8" style={{ imageRendering: 'pixelated' }} />
-            ) : (
-              <span className="text-lg">{group?.icon}</span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className={`text-sm font-semibold leading-snug ${RARITY_COLOR[tier] ?? RARITY_COLOR.common}`}>
-              {item.name}
-              {row.enchant_level > 0 && <span className="text-[#e0b050]"> +{row.enchant_level}</span>}
-              {row.legendary_effect && <span className="text-[#f0c060]"> ✦</span>}
-            </p>
-            <p className="mt-0.5 text-[11px] uppercase tracking-wider text-[#7d7a8c] leading-tight">
-              {isGear ? `${RARITY_LABEL[tier]} · ${group?.label ?? ''}` : group?.label}
-              {row.quantity > 1 && ` · ×${row.quantity}`}
-            </p>
-          </div>
+        <div
+          className={`relative w-9 h-9 rounded-md border ${RARITY_BORDER[tier] ?? RARITY_BORDER.common} bg-[#0b0a10]
+            flex items-center justify-center shrink-0`}
+        >
+          {item.icon ? (
+            <img src={`/items/${item.icon}`} alt="" className="w-7 h-7" style={{ imageRendering: 'pixelated' }} />
+          ) : (
+            <span className="text-base">{group?.icon}</span>
+          )}
+          {row.quantity > 1 && (
+            <span className="absolute -bottom-1 -right-1 rounded bg-[#0b0a10] px-0.5 text-[10px] leading-tight text-[#e5e1ed]">
+              ×{row.quantity}
+            </span>
+          )}
         </div>
-        <p className="mt-2 border-t border-white/[0.07] pt-2 text-xs leading-relaxed text-[#c9c4d4]">
-          {statLine(row).join(' · ')}
-        </p>
-        <span className="absolute right-2 top-2 flex gap-1 text-[11px]">
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-[13px] font-semibold leading-tight ${RARITY_COLOR[tier] ?? RARITY_COLOR.common}`}>
+            {item.name}
+            {row.enchant_level > 0 && <span className="text-[#e0b050]"> +{row.enchant_level}</span>}
+            {row.legendary_effect && <span className="text-[#f0c060]"> ✦</span>}
+          </p>
+          <p className="truncate text-[11px] leading-snug text-[#a29fb3]">
+            {statLine(row).join(' · ') || (isGear ? RARITY_LABEL[tier] : group?.label)}
+          </p>
+        </div>
+        <span className="flex shrink-0 gap-1 text-[11px]">
           {row.locked && <span title="Đã khoá">🔒</span>}
           {isUpgrade(row) && <span className="rounded bg-[#8fe0b0]/20 px-1 text-[#c8f5dc]" title="Mạnh hơn đồ đang mặc">▲</span>}
           {picked && <span className="rounded bg-[#e0b050] px-1 text-[#0e0c13]">✓</span>}
@@ -1165,7 +1168,7 @@ export default function InventoryManager({
               return (
                 <button
                   key={g.key}
-                  onClick={() => setGroupFilter(g.key)}
+                  onClick={() => (setGroupFilter(g.key), setBagLimit(BAG_PAGE))}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
                     on
                       ? 'border-[#8fe0b0]/60 bg-[#8fe0b0]/15 text-[#c8f5dc]'
@@ -1263,7 +1266,7 @@ export default function InventoryManager({
               <h2 className={`${ui.className} mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3]`}>
                 ĐANG MẶC <span className="font-normal tracking-normal text-[#7d7a8c]">{wornTiles.length}</span>
               </h2>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{wornTiles.map(renderTile)}</div>
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">{wornTiles.map(renderTile)}</div>
             </section>
           )}
           {bagTiles.length > 0 && (
@@ -1271,7 +1274,15 @@ export default function InventoryManager({
               <h2 className={`${ui.className} mb-3 text-xs font-semibold tracking-[2px] text-[#a29fb3]`}>
                 TRONG TÚI <span className="font-normal tracking-normal text-[#7d7a8c]">{bagTiles.length}</span>
               </h2>
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">{bagTiles.map(renderTile)}</div>
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">{bagTiles.slice(0, bagLimit).map(renderTile)}</div>
+              {bagTiles.length > bagLimit && (
+                <button
+                  onClick={() => setBagLimit((n) => n + BAG_PAGE)}
+                  className={`${ui.className} mt-2 w-full rounded-lg border border-white/10 py-2 text-xs text-[#a29fb3] hover:bg-white/[0.06]`}
+                >
+                  Xem thêm {Math.min(BAG_PAGE, bagTiles.length - bagLimit)} món (còn {bagTiles.length - bagLimit})
+                </button>
+              )}
             </section>
           )}
         </>
@@ -1372,7 +1383,7 @@ export default function InventoryManager({
             {recipes.length === 0 ? 'Chưa có công thức chế tạo nào.' : 'Không có công thức nào khớp bộ lọc.'}
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="grid gap-1.5 sm:grid-cols-2">
             {recipeView.map((recipe) => {
               const isPending = pendingRecipeId === recipe.id
               const isEquipment = recipe.resultItem.type === 'weapon' || recipe.resultItem.type === 'armor'
@@ -1388,75 +1399,64 @@ export default function InventoryManager({
               const canCraft = canAffordGold && hasAllMaterials
 
               return (
-                <div key={recipe.id} className="rounded-2xl border border-white/[0.09] bg-white/[0.045] p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {recipe.resultItem.icon && (
-                        <div
-                          className={`w-11 h-11 rounded-lg border ${RARITY_BORDER[recipe.resultItem.rarity] ?? RARITY_BORDER.common}
-                            bg-[#0b0a10] flex items-center justify-center shrink-0`}
-                        >
-                          <img
-                            src={`/items/${recipe.resultItem.icon}`}
-                            alt=""
-                            className="w-8 h-8"
-                            style={{ imageRendering: 'pixelated' }}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <p className={RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}>
-                          {recipe.name}
-                        </p>
-                        <p className={`${ui.className} text-xs text-[#8a8499] mt-1`}>
-                          {recipe.resultItem.item_level && recipe.resultItem.item_level > 1
-                            ? `Lv${recipe.resultItem.item_level} · `
-                            : ''}
-                          {Math.round(recipe.successRate * 100)}% thành công
-                          {cost > 0 && ` · ${cost} vàng`}
-                        </p>
-                        {isEquipment && (
-                          <p className={`${ui.className} text-xs text-[#5c5470] mt-0.5`}>
-                            Tier ngẫu nhiên
-                            {recipe.resultItem.rarity !== 'common' &&
-                              ` (tối thiểu ${RARITY_LABEL[recipe.resultItem.rarity]})`}
-                            {isBoosted ? ' · Huyền Thoại 5%' : ' · Huyền Thoại 2%'}
-                          </p>
-                        )}
+                <div key={recipe.id} className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-2">
+                  <div className="flex items-center gap-2.5">
+                    {recipe.resultItem.icon && (
+                      <div
+                        className={`w-9 h-9 rounded-md border ${RARITY_BORDER[recipe.resultItem.rarity] ?? RARITY_BORDER.common}
+                          bg-[#0b0a10] flex items-center justify-center shrink-0`}
+                      >
+                        <img
+                          src={`/items/${recipe.resultItem.icon}`}
+                          alt=""
+                          className="w-7 h-7"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
                       </div>
+                    )}
+                    <div className={`${ui.className} min-w-0 flex-1`}>
+                      <p className={`truncate text-[13px] leading-tight ${RARITY_COLOR[recipe.resultItem.rarity] ?? RARITY_COLOR.common}`}>
+                        {recipe.name}
+                      </p>
+                      <p className="truncate text-[11px] leading-snug text-[#8a8499]">
+                        {recipe.resultItem.item_level && recipe.resultItem.item_level > 1
+                          ? `Lv${recipe.resultItem.item_level} · `
+                          : ''}
+                        {Math.round(recipe.successRate * 100)}%
+                        {cost > 0 && ` · 🪙${cost}`}
+                        {' · '}
+                        {recipe.ingredients.map((ing, i) => {
+                          const have = rows
+                            .filter((r) => r.items.id === ing.item.id)
+                            .reduce((sum, r) => sum + r.quantity, 0)
+                          return (
+                            <span key={ing.item.id} className={have >= ing.quantity ? undefined : 'text-[#e09595]'}>
+                              {i > 0 && ', '}
+                              {ing.item.name} {have}/{ing.quantity}
+                            </span>
+                          )
+                        })}
+                      </p>
                     </div>
+                    {isEquipment && (
+                      <button
+                        onClick={() => setBoosted((b) => ({ ...b, [recipe.id]: !isBoosted }))}
+                        title={`Tăng tỉ lệ tier cao: ${boostCost(recipe.goldCost)} vàng thay vì ${recipe.goldCost} (Huyền Thoại 2% → 5%)`}
+                        className={`${ui.className} shrink-0 rounded-md border px-1.5 py-1 text-[11px] ${
+                          isBoosted ? 'border-[#e0b050] bg-[#e0b050]/15 text-[#f1dba0]' : 'border-white/10 text-[#7d7a8c]'
+                        }`}
+                      >
+                        ✨{isBoosted ? ' Tăng' : ''}
+                      </button>
+                    )}
                     <button
                       onClick={() => craft(recipe)}
                       disabled={!canCraft || isPending}
-                      className={`${ui.className} text-xs border border-[#8a8499] text-[#f2ede4] px-3 py-2 rounded-lg
+                      className={`${ui.className} shrink-0 text-xs border border-[#8a8499] text-[#f2ede4] px-2.5 py-1.5 rounded-lg
                         disabled:opacity-30 hover:bg-[#8a8499] hover:text-[#0e0c13] transition-colors whitespace-nowrap`}
                     >
-                      {isPending ? '…' : 'Chế tạo'}
+                      {isPending ? '…' : 'Chế'}
                     </button>
-                  </div>
-                  {isEquipment && (
-                    <label className={`${ui.className} flex items-center gap-2 mt-2 text-xs text-[#a29fb3] cursor-pointer`}>
-                      <input
-                        type="checkbox"
-                        checked={isBoosted}
-                        onChange={(e) => setBoosted((b) => ({ ...b, [recipe.id]: e.target.checked }))}
-                        className="accent-[#e0b050]"
-                      />
-                      Tăng tỉ lệ tier cao ({boostCost(recipe.goldCost)} vàng thay vì {recipe.goldCost})
-                    </label>
-                  )}
-                  <div className={`${ui.className} text-xs mt-2 space-y-0.5`}>
-                    {recipe.ingredients.map((ing) => {
-                      const have = rows
-                        .filter((r) => r.items.id === ing.item.id)
-                        .reduce((sum, r) => sum + r.quantity, 0)
-                      const enough = have >= ing.quantity
-                      return (
-                        <p key={ing.item.id} className={enough ? 'text-[#8a8499]' : 'text-[#e09595]'}>
-                          {ing.item.name}: {have} / {ing.quantity}
-                        </p>
-                      )
-                    })}
                   </div>
                 </div>
               )
