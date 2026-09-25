@@ -59,6 +59,50 @@ export function formatPassive(p: PetPassive) {
   return { icon: def.icon, name: def.name, text: `${pct} ${def.label}${def.note ? ` (${def.note})` : ''}` }
 }
 
+// Pet đánh theo (migration 20261013100000): mỗi lượt 1 đòn theo % ATK của chủ + 1 skill theo loài,
+// hồi 4 lượt. Khớp pet_combat() / pet_species_skills / simulate_fight.
+export const PET_ATTACK: Record<PetRarity, { pct: number; power: number }> = {
+  common: { pct: 0.08, power: 1 },
+  rare: { pct: 0.12, power: 1.25 },
+  epic: { pct: 0.18, power: 1.5 },
+  legendary: { pct: 0.25, power: 2 },
+}
+
+type PetSkillKey = 'heal' | 'guard' | 'bleed' | 'poison' | 'freeze' | 'burn'
+
+export const PET_SKILL_INFO: Record<PetSkillKey, { icon: string; name: string; desc: (power: number) => string }> = {
+  heal: { icon: '💚', name: 'Chữa Lành', desc: (p) => `hồi ${Math.round(3 * p)}% HP tối đa khi HP dưới 80%` },
+  guard: { icon: '🛡️', name: 'Hộ Thân', desc: () => 'chặn trọn 1 đòn của quái' },
+  freeze: { icon: '❄️', name: 'Hơi Băng', desc: (p) => `${Math.round(10 * p)}% đóng băng quái 1 lượt` },
+  bleed: { icon: '🩸', name: 'Cắn Xé', desc: (p) => `chảy máu ${Math.round(40 * p)}% đòn pet mỗi lượt × 3` },
+  poison: { icon: '🐍', name: 'Phun Độc', desc: (p) => `độc ${Math.round(40 * p)}% đòn pet mỗi lượt × 3` },
+  burn: { icon: '🔥', name: 'Phun Lửa', desc: (p) => `thiêu ${Math.round(40 * p)}% đòn pet mỗi lượt × 3` },
+}
+
+export const PET_SKILLS: Record<string, PetSkillKey> = {
+  'Slime Xanh': 'heal', 'Yêu Tinh Rừng': 'heal', 'Bù Nhìn Ma': 'heal', 'Mắt Hư Không': 'heal',
+  'Sứa Không Gian': 'heal', 'Tinh Thể Sống': 'heal', 'Thiên Nhãn': 'heal',
+  'Bọ Giáp Hang': 'guard', 'Goblin Thợ Mỏ': 'guard', Orc: 'guard', 'Ancient Golem': 'guard', Yeti: 'guard',
+  'Xác Ướp': 'guard', 'Golem Dung Nham': 'guard', 'Tượng Thần Canh Gác': 'guard', 'Người Khổng Lồ Pha Lê': 'guard',
+  'Sói Rừng': 'bleed', 'Lợn Rừng': 'bleed', 'Ong Bắp Cày': 'bleed', 'Vua Châu Chấu': 'bleed',
+  'Sâu Cát Khổng Lồ': 'bleed', 'Sư Tử Thần': 'bleed', 'Kẻ Nuốt Sao': 'bleed',
+  'Rắn Cỏ': 'poison', 'Sâu Đồng': 'poison', 'Nhện Hang': 'poison', 'Bọ Cạp Cát': 'poison',
+  'Rắn Hổ Mang': 'poison', 'Nhện Bóng Tối': 'poison', 'Nguyên Tố Hỗn Mang': 'poison',
+  'Sói Tuyết': 'freeze', 'Hồn Ma Băng': 'freeze', 'Rồng Băng Non': 'freeze',
+  'Thằn Lằn Lửa': 'burn', 'Tinh Linh Lửa': 'burn', 'Chó Địa Ngục': 'burn', 'Rồng Lửa Cổ Đại': 'burn',
+  'Rồng Nguyên Tố': 'burn',
+}
+
+export function petCombatLine(species: string, rarity: PetRarity) {
+  const { pct, power } = PET_ATTACK[rarity]
+  const key = PET_SKILLS[species]
+  const skill = key ? PET_SKILL_INFO[key] : null
+  return {
+    attack: `⚔️ Đánh theo ${Math.round(pct * 100)}% ATK mỗi lượt`,
+    skill: skill ? `${skill.icon} ${skill.name}: ${skill.desc(power)} (hồi 4 lượt)` : null,
+  }
+}
+
 // Lưới bắt pet: key item → bậc, khớp pet_catch_rate()
 export const NETS = [
   { key: 'net_basic', name: 'Lưới Thường', tier: 1, icon: 'net_basic.png' },

@@ -14,7 +14,7 @@ export type LastFight = {
   enemy: string
   log: {
     turn: number
-    actor: 'character' | 'enemy' | 'system'
+    actor: 'character' | 'enemy' | 'pet' | 'system'
     skill?: string
     damage?: number
     crit?: boolean
@@ -38,6 +38,13 @@ export type LastFight = {
     enraged?: boolean
     poison?: number
     regen?: number
+    // Skill hỗ trợ / lá chắn / pet
+    buff?: boolean
+    blocked?: boolean
+    shield?: number
+    pet_name?: string
+    pet_skill?: string | null
+    heal?: number
   }[]
 }
 
@@ -74,12 +81,38 @@ export function Meter({
   )
 }
 
+// Skill pet trong nhật ký trận (khớp simulate_fight: v_pet_skill)
+const PET_SKILL_LOG: Record<string, string> = {
+  heal: '💚 Chữa Lành',
+  guard: '🛡️ Hộ Thân',
+  freeze: '❄️ Hơi Băng',
+  bleed: '🩸 Cắn Xé',
+  poison: '🐍 Phun Độc',
+  burn: '🔥 Phun Lửa',
+}
+
 export function LastFightLog({ fight }: { fight: LastFight }) {
   return (
     <div className="mt-2 max-h-64 overflow-y-auto space-y-1 border-l border-white/[0.1] pl-3">
       {fight.log.map((e, i) => (
         <p key={i} className="text-xs leading-relaxed">
-          {e.actor === 'character' && e.miss ? (
+          {e.actor === 'character' && e.buff ? (
+            <span className="text-[#8fc4e0]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> ✨ {e.skill}: {e.message}
+            </span>
+          ) : e.actor === 'pet' ? (
+            <span className="text-[#c8f5dc]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> 🐾 {e.pet_name}
+              {e.pet_skill && <b> {PET_SKILL_LOG[e.pet_skill] ?? e.pet_skill}</b>}
+              {!!e.heal && <span> · hồi {e.heal} HP</span>}
+              {e.stun && <span className="text-[#8fc4e0]"> · ❄️ đóng băng!</span>} · cắn <b className="text-white">{e.damage}</b> ·{' '}
+              {fight.enemy} còn {e.enemy_hp_left} HP
+            </span>
+          ) : e.actor === 'enemy' && e.blocked ? (
+            <span className="text-[#8fc4e0]">
+              <span className="text-[#7d7a8c]">#{e.turn}</span> 🛡️ Đòn của {e.enemy_name} bị chặn / né
+            </span>
+          ) : e.actor === 'character' && e.miss ? (
             <span className="text-[#7d7a8c]">
               <span className="text-[#7d7a8c]">#{e.turn}</span> 💨 {e.skill} trượt — {fight.enemy} né được
             </span>
@@ -107,6 +140,7 @@ export function LastFightLog({ fight }: { fight: LastFight }) {
               <span className="text-[#7d7a8c]">#{e.turn}</span> {e.enraged && <b>😡 Cuồng Nộ! </b>}🩸 {e.enemy_name} đánh{' '}
               <b className={e.enemy_crit ? 'text-[#ff8080]' : undefined}>{e.damage}</b>
               {e.enemy_crit && ' (chí mạng!)'}
+              {!!e.shield && <span className="text-[#8fc4e0]"> · 🔮 lá chắn đỡ {e.shield}</span>}
               {!!e.poison && <span> · 🐍 độc −{e.poison}</span>} · bạn còn {e.character_hp_left} HP
               {!!e.thorns && <span className="text-[#f0c060]"> · 🌵 Phản Đòn {e.thorns}</span>}
               {!!e.regen && <span className="text-[#8fe0b0]"> · 💚 quái hồi {e.regen}</span>}

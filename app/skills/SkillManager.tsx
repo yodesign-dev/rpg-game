@@ -216,7 +216,7 @@ function SkillGroup({
                   {skill.skill_type === 'active' && (
                     <p className={`${ui.className} flex gap-1.5 mt-1.5`}>
                       <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-[#e5e1ed]">
-                        ×{skill.power_multiplier ?? 1}
+                        {skill.power_multiplier == null ? '🛡️ hỗ trợ' : `×${skill.power_multiplier}`}
                       </span>
                       <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-[#a29fb3]">
                         ⏳ hồi {skill.cooldown} lượt

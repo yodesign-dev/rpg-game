@@ -12,6 +12,7 @@ import {
   RARITY_ORDER,
   catchRate,
   formatPassive,
+  petCombatLine,
   releaseGold,
   type Pet,
   type PetEncounter,
@@ -251,6 +252,7 @@ export default function PetsManager({
               <p className="mb-1 text-xs text-[#a29fb3]">
                 {PET_RARITY[active.rarity].label} · Lv{active.level}
               </p>
+              <PetCombat species={active.species} rarity={active.rarity} />
               <PassiveList passives={active.passives} />
             </div>
             <button
@@ -292,6 +294,7 @@ export default function PetsManager({
                     <p className={`truncate text-sm ${r.text}`}>
                       {pet.species} <span className="text-xs font-normal text-[#7d7a8c]">Lv{pet.level}</span>
                     </p>
+                    <PetCombat species={pet.species} rarity={pet.rarity} compact />
                     <PassiveList passives={pet.passives} compact />
                   </div>
                   <div className="flex shrink-0 flex-col gap-1">
@@ -326,6 +329,16 @@ export default function PetsManager({
         )}
       </section>
     </div>
+  )
+}
+
+function PetCombat({ species, rarity, compact = false }: { species: string; rarity: Pet['rarity']; compact?: boolean }) {
+  const line = petCombatLine(species, rarity)
+  return (
+    <ul className={`${compact ? 'text-[11px] leading-snug' : 'mb-1 space-y-0.5 text-xs'} text-[#f1dba0]`}>
+      {!compact && <li>{line.attack}</li>}
+      {line.skill && <li>{line.skill}</li>}
+    </ul>
   )
 }
 
