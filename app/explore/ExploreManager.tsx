@@ -9,6 +9,7 @@ import EnemyAvatar, { ENEMY_TIER_TEXT, EnemyTraits, enemyTier } from '../compone
 import { ENEMY_TRAITS } from '@/lib/enemies'
 import SupplyResult from '../components/SupplyResult'
 import PetAvatar from '../components/PetAvatar'
+import QuickRefill from '../components/QuickRefill'
 import Link from 'next/link'
 import { PET_RARITY, type PetRarity } from '@/lib/pets'
 
@@ -152,8 +153,22 @@ export default function ExploreManager({
     <div className={ui.className}>
       {/* HP / AP hiện tại */}
       <div className="grid grid-cols-2 gap-3 mb-5">
-        <Meter label="HP" value={localHp} max={maxHp} color="linear-gradient(90deg,#b06fd8,#e086b0)" note="Hồi 2%/phút" />
-        <Meter label="AP" value={localAp} max={maxAp} color="linear-gradient(90deg,#3d9e6b,#8fe0b0)" note="+1 mỗi phút" />
+        <Meter
+          label="HP"
+          value={localHp}
+          max={maxHp}
+          color="linear-gradient(90deg,#b06fd8,#e086b0)"
+          note="Hồi 2%/phút"
+          action={<QuickRefill characterId={characterId} kind="hp" disabled={busy} onDone={(r) => setLocalHp(r.hp)} />}
+        />
+        <Meter
+          label="AP"
+          value={localAp}
+          max={maxAp}
+          color="linear-gradient(90deg,#3d9e6b,#8fe0b0)"
+          note="+1 mỗi phút"
+          action={<QuickRefill characterId={characterId} kind="ap" disabled={busy} onDone={(r) => setLocalAp(r.ap)} />}
+        />
       </div>
 
       {/* Danh sách vùng */}

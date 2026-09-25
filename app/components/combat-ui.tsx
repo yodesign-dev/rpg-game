@@ -41,7 +41,21 @@ export type LastFight = {
   }[]
 }
 
-export function Meter({ label, value, max, color, note }: { label: string; value: number; max: number; color: string; note: string }) {
+export function Meter({
+  label,
+  value,
+  max,
+  color,
+  note,
+  action,
+}: {
+  label: string
+  value: number
+  max: number
+  color: string
+  note: string
+  action?: React.ReactNode // vd. nút Hồi đầy, hiện khi chưa đầy
+}) {
   const pct = Math.min(100, Math.round((value / Math.max(1, max)) * 100))
   return (
     <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-3">
@@ -55,6 +69,7 @@ export function Meter({ label, value, max, color, note }: { label: string; value
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
       </div>
       {value < max && <p className="text-xs text-[#7d7a8c] text-right mt-1.5">{note}</p>}
+      {value < max && action}
     </div>
   )
 }

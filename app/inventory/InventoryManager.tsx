@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
+import QuickRefill from '../components/QuickRefill'
 import PortraitCard from '../components/PortraitCard'
 import { LEGENDARY_EFFECTS } from '@/lib/legendary-effects'
 import { INVENTORY_SELECT, type MaterialInfo } from '@/lib/inventory'
@@ -1091,6 +1092,28 @@ export default function InventoryManager({
               <p className={`${ui.className} text-xs text-[#6b8a5a]`}>
                 AP {localAp} / {maxAp}
               </p>
+              <div className={`${ui.className} w-full max-w-[160px]`}>
+                {localHp < totalMaxHp && (
+                  <QuickRefill
+                    characterId={characterId}
+                    kind="hp"
+                    onDone={(r) => {
+                      setLocalHp(r.hp)
+                      reloadRows()
+                    }}
+                  />
+                )}
+                {localAp < maxAp && (
+                  <QuickRefill
+                    characterId={characterId}
+                    kind="ap"
+                    onDone={(r) => {
+                      setLocalAp(r.ap)
+                      reloadRows()
+                    }}
+                  />
+                )}
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">

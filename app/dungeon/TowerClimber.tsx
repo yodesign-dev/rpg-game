@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../components/combat-ui'
+import QuickRefill from '../components/QuickRefill'
 import EnemyAvatar, { ENEMY_TIER_TEXT, EnemyTraits, enemyTier } from '../components/EnemyAvatar'
 import SupplyResult from '../components/SupplyResult'
 
@@ -138,8 +139,22 @@ export default function TowerClimber({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <Meter label="HP" value={hp} max={maxHp} color="linear-gradient(90deg,#b06fd8,#e086b0)" note="Hồi 2%/phút" />
-        <Meter label="AP" value={ap} max={maxAp} color="linear-gradient(90deg,#3d9e6b,#8fe0b0)" note="+1 mỗi phút" />
+        <Meter
+          label="HP"
+          value={hp}
+          max={maxHp}
+          color="linear-gradient(90deg,#b06fd8,#e086b0)"
+          note="Hồi 2%/phút"
+          action={<QuickRefill characterId={characterId} kind="hp" onDone={(r) => setHp(r.hp)} />}
+        />
+        <Meter
+          label="AP"
+          value={ap}
+          max={maxAp}
+          color="linear-gradient(90deg,#3d9e6b,#8fe0b0)"
+          note="+1 mỗi phút"
+          action={<QuickRefill characterId={characterId} kind="ap" onDone={(r) => setAp(r.ap)} />}
+        />
       </div>
 
       <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4">
