@@ -50,6 +50,7 @@ type ExploreResult = {
   turns_completed: number
   wins: number
   died: boolean
+  died_to_boss?: boolean
   potions_used?: number
   guard_used?: boolean
   buffs?: { exp?: boolean; luck?: boolean }
@@ -419,6 +420,7 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
           </p>
         )}
         {result.died && <p className="text-[#e09595]">Trận cuối gục ngã nên không có thưởng.</p>}
+        {result.died_to_boss && <p className="text-[#7d7a8c]">Gục trước boss nên không bị phạt vàng / EXP.</p>}
         {result.leveled_up && (
           <p className="text-[#f0c060]">⭐ Lên cấp {result.new_level}! Vào trang nhân vật để cộng điểm chỉ số.</p>
         )}

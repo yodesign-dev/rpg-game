@@ -93,7 +93,7 @@ export const ENEMY_TRAITS: Record<string, { icon: string; name: string; desc: st
   savage: { icon: '🐺', name: 'Hung Bạo', desc: '15% đòn của quái là chí mạng ×1.5' },
   enrage: { icon: '😡', name: 'Cuồng Nộ', desc: 'Dưới 50% HP, quái đánh mạnh hơn 30%' },
   venom: { icon: '🐍', name: 'Độc', desc: 'Trúng đòn bị nhiễm độc: mất 2% HP tối đa mỗi lượt' },
-  regen: { icon: '💚', name: 'Tái Sinh', desc: 'Quái hồi 4% HP mỗi lượt' },
+  regen: { icon: '💚', name: 'Tái Sinh', desc: 'Quái hồi 4% HP mỗi lượt (boss 1.5%)' },
   thorny: { icon: '🦔', name: 'Gai', desc: 'Phản lại 4% sát thương bạn gây ra' },
   unholy: { icon: '🕯️', name: 'Ô Uế', desc: 'Hút máu của bạn giảm 50%' },
 }
