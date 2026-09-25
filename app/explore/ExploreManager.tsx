@@ -13,8 +13,6 @@ import QuickRefill from '../components/QuickRefill'
 import Link from 'next/link'
 import { PET_RARITY, type PetRarity } from '@/lib/pets'
 
-
-
 export type Zone = {
   id: string
   name: string
@@ -45,7 +43,6 @@ type Fight = {
   traits?: string[]
   pet?: PetRarity | null
 }
-
 
 type ExploreResult = {
   zone: string
@@ -103,7 +100,7 @@ export default function ExploreManager({
   const router = useRouter()
   const [selectedId, setSelectedId] = useState(
     // Mặc định: vùng cao nhất mà level hiện tại đã đạt mức tối thiểu
-    [...zones].reverse().find((z) => level >= z.minLevel)?.id ?? zones[0]?.id ?? null
+    [...zones].reverse().find((z) => level >= z.minLevel)?.id ?? zones[0]?.id ?? null,
   )
   const [turns, setTurns] = useState(100)
   const [busy, setBusy] = useState(false)
@@ -113,6 +110,10 @@ export default function ExploreManager({
   const [localAp, setLocalAp] = useState(currentAp)
   // Mặc định chỉ hiện vùng quanh cấp hiện tại; vùng quá dễ / quá khó ẩn sau nút
   const [showAll, setShowAll] = useState(false)
+  // Danh sách vùng chỉ mở khi đổi vùng — bình thường chỉ hiện thẻ vùng đang chọn cho gọn
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
+  const resultRef = useRef<HTMLDivElement>(null)
   const nearby = zones.filter((z) => level <= z.maxLevel + 5 && z.minLevel - level <= 10)
   const visibleZones = showAll || nearby.length === 0 ? zones : nearby
 
@@ -149,10 +150,23 @@ export default function ExploreManager({
     router.refresh()
   }
 
+  // Có kết quả mới → cuộn tới khung kết quả (nút Thám hiểm ở thanh dưới nên không cần cuộn ngược lên)
+  useEffect(() => {
+    if (result) resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [result])
+
+  function pickZone(id: string) {
+    setSelectedId(id)
+    setPickerOpen(false)
+    setShowDetails(false)
+  }
+
+  const runTurns = Math.min(turns, maxTurnsByAp)
+
   return (
     <div className={ui.className}>
       {/* HP / AP hiện tại */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         <Meter
           label="HP"
           value={localHp}
@@ -171,165 +185,196 @@ export default function ExploreManager({
         />
       </div>
 
-      {/* Danh sách vùng */}
-      <div className="flex flex-col gap-2 mb-5">
-        {visibleZones.map((z) => {
-          const selected = z.id === selectedId
-          const danger = zoneDanger(level, z)
-          return (
+      {/* Vùng: thẻ vùng đang chọn, bấm "Đổi vùng" mới mở danh sách */}
+      {zone && !pickerOpen ? (
+        <div className="mb-4 rounded-2xl border border-[#8fe0b0]/40 bg-[#8fe0b0]/[0.06] px-4 py-3">
+          <ZoneHeader zone={zone} level={level} />
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="flex-1 rounded-lg border border-white/15 py-1.5 text-xs text-[#c9c4d4] hover:bg-white/10"
+            >
+              👾 Quái & đồ rơi {showDetails ? '▴' : '▾'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              disabled={busy}
+              className="flex-1 rounded-lg border border-white/15 py-1.5 text-xs text-[#c9c4d4] hover:bg-white/10 disabled:opacity-40"
+            >
+              🗺️ Đổi vùng
+            </button>
+          </div>
+          {showDetails && <ZoneDetails zone={zone} />}
+        </div>
+      ) : (
+        <div className="mb-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold tracking-[2px] text-[#a29fb3]">CHỌN VÙNG</p>
+            {zone && (
+              <button type="button" onClick={() => setPickerOpen(false)} className="text-xs text-[#a29fb3] hover:text-white">
+                Đóng ✕
+              </button>
+            )}
+          </div>
+          {visibleZones.map((z) => (
             <button
               key={z.id}
               type="button"
-              onClick={() => setSelectedId(z.id)}
+              onClick={() => pickZone(z.id)}
               className={`text-left rounded-2xl border px-4 py-3 transition-colors ${
-                selected
+                z.id === selectedId
                   ? 'bg-[#8fe0b0]/[0.08] border-[#8fe0b0]/50'
                   : 'bg-white/[0.04] border-white/[0.08] hover:bg-white/[0.07]'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl shrink-0">{z.icon}</span>
-                <div className="flex-grow min-w-0">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-base font-semibold text-white">{z.name}</span>
-                    <span className="text-xs text-[#a29fb3]">
-                      Lv {z.minLevel}–{z.maxLevel}
-                    </span>
-                  </div>
-                  {danger.note && <div className="text-xs text-[#7d7a8c] mt-0.5">{danger.note}</div>}
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${danger.cls}`}>{danger.label}</span>
-                  <span className="text-xs text-[#a29fb3]">{z.apCost} AP/10 trận</span>
-                </div>
-              </div>
-
-              {selected && (
-                <div className="mt-3 pt-3 border-t border-white/[0.08] text-xs text-[#a29fb3] space-y-1.5">
-                  {z.description && <p>{z.description}</p>}
-                  {z.enemies.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {z.enemies.map((e) => (
-                        <span key={e.name} className="flex w-16 flex-col items-center gap-1 text-center">
-                          <EnemyAvatar name={e.name} size={48} boss={e.is_boss} />
-                          <span className={`leading-tight ${e.is_boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
-                            {e.is_boss && '👑 '}
-                            {e.name}
-                          </span>
-                          <span className="text-[#7d7a8c]">Lv{e.level}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {z.traits.length > 0 && (
-                    <div className="space-y-0.5">
-                      {z.traits.map((t) => (
-                        <p key={t}>
-                          Đặc tính vùng: {ENEMY_TRAITS[t]?.icon}{' '}
-                          <span className="text-[#e5e1ed]">{ENEMY_TRAITS[t]?.name ?? t}</span>
-                          <span className="text-[#7d7a8c]"> — {ENEMY_TRAITS[t]?.desc}</span>
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-[#7d7a8c]">
-                    Quái thường có thể xuất hiện dạng <span className="text-[#8fc4e0]">Tinh Anh</span> hoặc hiếm hơn là{' '}
-                    <span className="text-[#f0c060]">Hung Thần</span> — mạnh hơn, thêm 1–2 đặc tính, thưởng lớn hơn. Boss luôn Cuồng Nộ.
-                  </p>
-                  {z.drops.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {z.drops.map((d) => (
-                        <span
-                          key={d.key}
-                          className="flex items-center gap-1 rounded-full bg-white/[0.05] border border-white/[0.08] pl-1 pr-2 py-0.5"
-                        >
-                          <ItemIcon icon={d.icon} size={16} />
-                          <span className={RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}>{d.name}</span>
-                          {d.bossOnly && <span className="text-[#f0a8a8]">· boss</span>}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </button>
-          )
-        })}
-        {visibleZones.length < zones.length || showAll ? (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="rounded-2xl border border-dashed border-white/15 py-2.5 text-sm text-[#a29fb3] hover:text-white"
-          >
-            {showAll ? 'Chỉ hiện vùng hợp cấp' : `Hiện tất cả ${zones.length} vùng`}
-          </button>
-        ) : null}
-      </div>
-
-      {/* Số lượt */}
-      <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <label htmlFor="turns" className="text-sm text-[#a29fb3]">
-            Số lượt chiến đấu
-          </label>
-          <span className="text-lg font-semibold text-white">{turns}</span>
-        </div>
-        <input
-          id="turns"
-          type="range"
-          min={1}
-          max={100}
-          value={turns}
-          onChange={(e) => setTurns(Number(e.target.value))}
-          className="w-full accent-[#8fe0b0]"
-        />
-        <div className="flex gap-2 mt-3">
-          {TURN_PRESETS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setTurns(n)}
-              className={`flex-1 rounded-lg py-1.5 text-sm border ${
-                turns === n
-                  ? 'bg-[#8fe0b0]/15 border-[#8fe0b0]/50 text-white'
-                  : 'bg-white/[0.04] border-white/[0.08] text-[#a29fb3]'
-              }`}
-            >
-              {n}
+              <ZoneHeader zone={z} level={level} />
             </button>
           ))}
+          {visibleZones.length < zones.length || showAll ? (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="rounded-2xl border border-dashed border-white/15 py-2.5 text-sm text-[#a29fb3] hover:text-white"
+            >
+              {showAll ? 'Chỉ hiện vùng hợp cấp' : `Hiện tất cả ${zones.length} vùng`}
+            </button>
+          ) : null}
         </div>
+      )}
+
+      {error && <p className="text-sm text-[#e09595] mb-3">{error}</p>}
+
+      <div ref={resultRef} className="scroll-mt-4">
+        {result && <ResultPanel result={result.data} zone={result.zone} />}
       </div>
 
-      <button
-        type="button"
-        onClick={explore}
-        disabled={busy || !zone || exhausted || lackAp}
-        className="w-full rounded-2xl py-4 text-lg font-bold text-white border border-[#8fe0b0]/40
-          bg-gradient-to-r from-[#3d6b52]/70 to-[#3d6b52]/25 hover:border-[#8fe0b0]/70
-          disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {busy
-          ? 'Đang thám hiểm…'
-          : !zone
-            ? 'Chưa chọn vùng'
-            : exhausted
-              ? 'Kiệt sức — chờ hồi HP'
-              : lackAp
-                ? `Thiếu AP (cần ${zone.apCost} cho 10 trận)`
-                : `Thám hiểm ${Math.min(turns, maxTurnsByAp)} lượt · −${apCostFor(Math.min(turns, maxTurnsByAp))} AP`}
-      </button>
+      {/* Chừa chỗ cho thanh hành động cố định bên dưới */}
+      <div className="h-36" aria-hidden />
 
-      {error && <p className="text-sm text-[#e09595] mt-3">{error}</p>}
-
-      {result && <ResultPanel result={result.data} zone={result.zone} />}
+      {/* Thanh hành động: luôn nằm trên bottom nav, khỏi cuộn lên xuống */}
+      <div className="fixed inset-x-0 bottom-[112px] z-20 px-4 pointer-events-none">
+        <div className="pointer-events-auto mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#121017]/95 p-2.5 shadow-lg shadow-black/60 backdrop-blur-md">
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="shrink-0 text-xs text-[#7d7a8c]">Số trận</span>
+            {TURN_PRESETS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setTurns(n)}
+                disabled={busy}
+                className={`flex-1 rounded-lg py-1 text-sm border ${
+                  turns === n
+                    ? 'bg-[#8fe0b0]/15 border-[#8fe0b0]/50 text-white'
+                    : 'bg-white/[0.04] border-white/[0.08] text-[#a29fb3]'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={explore}
+            disabled={busy || !zone || exhausted || lackAp}
+            className="w-full rounded-xl py-3 text-base font-bold text-white border border-[#8fe0b0]/40
+              bg-gradient-to-r from-[#3d6b52] to-[#3d6b52]/50 hover:border-[#8fe0b0]/70
+              disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {busy
+              ? 'Đang thám hiểm…'
+              : !zone
+                ? 'Chưa chọn vùng'
+                : exhausted
+                  ? 'Kiệt sức — chờ hồi HP'
+                  : lackAp
+                    ? `Thiếu AP (cần ${zone.apCost} cho 10 trận)`
+                    : `${result ? '🔁 Đi tiếp' : '🧭 Thám hiểm'} ${zone.icon} ${runTurns} trận · −${apCostFor(runTurns)} AP`}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
+// Dòng tiêu đề vùng: icon, tên, cấp, mức nguy hiểm, giá vé AP
+function ZoneHeader({ zone: z, level }: { zone: Zone; level: number }) {
+  const danger = zoneDanger(level, z)
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-2xl shrink-0">{z.icon}</span>
+      <div className="flex-grow min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-base font-semibold text-white">{z.name}</span>
+          <span className="text-xs text-[#a29fb3]">
+            Lv {z.minLevel}–{z.maxLevel}
+          </span>
+        </div>
+        {danger.note && <div className="text-xs text-[#7d7a8c] mt-0.5">{danger.note}</div>}
+      </div>
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${danger.cls}`}>{danger.label}</span>
+        <span className="text-xs text-[#a29fb3]">{z.apCost} AP/10 trận</span>
+      </div>
+    </div>
+  )
+}
+
+// Chi tiết vùng: mô tả, quái, đặc tính, đồ rơi
+function ZoneDetails({ zone: z }: { zone: Zone }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-white/[0.08] text-xs text-[#a29fb3] space-y-1.5">
+      {z.description && <p>{z.description}</p>}
+      {z.enemies.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {z.enemies.map((e) => (
+            <span key={e.name} className="flex w-16 flex-col items-center gap-1 text-center">
+              <EnemyAvatar name={e.name} size={48} boss={e.is_boss} />
+              <span className={`leading-tight ${e.is_boss ? 'text-[#f0a8a8]' : 'text-[#c9c4d4]'}`}>
+                {e.is_boss && '👑 '}
+                {e.name}
+              </span>
+              <span className="text-[#7d7a8c]">Lv{e.level}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {z.traits.length > 0 && (
+        <div className="space-y-0.5">
+          {z.traits.map((t) => (
+            <p key={t}>
+              Đặc tính vùng: {ENEMY_TRAITS[t]?.icon} <span className="text-[#e5e1ed]">{ENEMY_TRAITS[t]?.name ?? t}</span>
+              <span className="text-[#7d7a8c]"> — {ENEMY_TRAITS[t]?.desc}</span>
+            </p>
+          ))}
+        </div>
+      )}
+      <p className="text-[#7d7a8c]">
+        Quái thường có thể xuất hiện dạng <span className="text-[#8fc4e0]">Tinh Anh</span> hoặc hiếm hơn là{' '}
+        <span className="text-[#f0c060]">Hung Thần</span> — mạnh hơn, thêm 1–2 đặc tính, thưởng lớn hơn. Boss luôn Cuồng Nộ.
+      </p>
+      {z.drops.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {z.drops.map((d) => (
+            <span
+              key={d.key}
+              className="flex items-center gap-1 rounded-full bg-white/[0.05] border border-white/[0.08] pl-1 pr-2 py-0.5"
+            >
+              <ItemIcon icon={d.icon} size={16} />
+              <span className={RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}>{d.name}</span>
+              {d.bossOnly && <span className="text-[#f0a8a8]">· boss</span>}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
   const [showLastFight, setShowLastFight] = useState(false)
+  const [showLog, setShowLog] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const bosses = result.fights.filter((f) => f.boss && f.result === 'win').length
   // Chạm trán đáng chú ý: Hung Thần + boss hiện ảnh lớn; Tinh Anh chỉ đếm
@@ -341,90 +386,26 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
   // Cuộn tới lượt cuối — thường là lượt người chơi quan tâm nhất
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
-  }, [result])
+  }, [result, showLog])
 
   return (
-    <div className="mt-5 rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4">
+    <div className="rounded-2xl bg-white/[0.045] border border-white/[0.09] p-4">
       <p className="text-base font-semibold text-white">
         {result.died ? '💀 Gục ngã' : '🗺️ Thám hiểm hoàn tất'}
         <span className="font-normal text-[#a29fb3]">
-          {' '}— {zone.icon} {zone.name} (Lv{zone.minLevel}–{zone.maxLevel}) · {result.turns_completed}/{result.turns_requested} lượt
+          {' '}
+          — {zone.icon} {zone.name} (Lv{zone.minLevel}–{zone.maxLevel}) · {result.turns_completed}/{result.turns_requested} lượt
         </span>
       </p>
 
-      {(notable.length > 0 || elites.length > 0) && (
-        <div className="mt-3 rounded-xl bg-black/20 border border-white/[0.06] p-3">
-          {notable.length > 0 && (
-            <div className="flex flex-wrap gap-3 mb-2">
-              {notable.map((f) => (
-                <div key={f.turn} className="flex w-20 flex-col items-center gap-1 text-center text-xs">
-                  <EnemyAvatar name={f.enemy} size={64} boss={f.boss} />
-                  <span className={`leading-tight ${ENEMY_TIER_TEXT[enemyTier(f.enemy, f.boss)]}`}>{f.enemy}</span>
-                  <span className={f.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
-                    T{f.turn} · {f.result === 'win' ? 'hạ' : f.result === 'flee' ? 'rút lui' : 'gục'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {elites.length > 0 && (
-            <p className="text-xs text-[#a29fb3]">
-              <span className="text-[#8fc4e0]">Tinh Anh</span>: gặp {elites.length}, hạ {elitesWon}
-            </p>
-          )}
-        </div>
-      )}
-
-      {!!result.pets?.length && (
-        <Link
-          href="/pets"
-          className="mt-3 block rounded-xl border border-[#f0c060]/40 bg-[#f0c060]/[0.07] p-3 hover:bg-[#f0c060]/[0.12] transition-colors"
-        >
-          <p className="text-sm text-[#f1dba0]">
-            🐾 Gặp {result.pets.length} pet hoang dã! <span className="text-[#a29fb3]">Ném lưới để bắt trong 24 giờ →</span>
-          </p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {result.pets.map((p, i) => (
-              <div key={i} className="flex w-16 flex-col items-center gap-1 text-center text-xs">
-                <PetAvatar species={p.species} rarity={p.rarity} size={48} />
-                <span className={`leading-tight ${PET_RARITY[p.rarity].text}`}>{p.species}</span>
-                <span className="text-[#7d7a8c]">{PET_RARITY[p.rarity].label}</span>
-              </div>
-            ))}
-          </div>
-        </Link>
-      )}
-
-      {/* Log từng lượt */}
-      <div
-        ref={listRef}
-        className="mt-3 max-h-96 overflow-y-auto rounded-xl bg-black/30 border border-white/[0.06] divide-y divide-white/[0.05]"
-      >
-        {result.fights.map((f) => (
-          <TurnRow key={f.turn} fight={f} maxHp={result.max_hp} dropInfo={dropInfo} />
-        ))}
-      </div>
-
-      {result.last_fight && (
-        <>
-          <button
-            type="button"
-            onClick={() => setShowLastFight((v) => !v)}
-            className="mt-3 text-xs text-[#a29fb3] hover:text-white"
-          >
-            📜 {showLastFight ? 'Ẩn' : 'Xem'} chi tiết trận cuối (T{result.last_fight.turn} · {result.last_fight.enemy})
-          </button>
-          {showLastFight && <LastFightLog fight={result.last_fight} />}
-        </>
-      )}
-
       {/* Tổng kết */}
-      <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-1.5 text-sm">
+      <div className="mt-3 space-y-1.5 text-sm">
         <p className="text-white">
           ✨ Tổng: <b className="text-[#f0c060]">+{result.exp_gained} EXP</b> ·{' '}
           <b className="text-[#f0c060]">+{result.gold_gained} Vàng</b>
           <span className="text-[#a29fb3]">
-            {' '}· thắng {result.wins} trận{bosses > 0 && ` · hạ ${bosses} boss 🏆`}
+            {' '}
+            · thắng {result.wins} trận{bosses > 0 && ` · hạ ${bosses} boss 🏆`}
           </span>
         </p>
         <p className="text-[#e5e1ed]">
@@ -456,6 +437,80 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
             </span>
           ))}
         </div>
+      )}
+      {!!result.pets?.length && (
+        <Link
+          href="/pets"
+          className="mt-3 block rounded-xl border border-[#f0c060]/40 bg-[#f0c060]/[0.07] p-3 hover:bg-[#f0c060]/[0.12] transition-colors"
+        >
+          <p className="text-sm text-[#f1dba0]">
+            🐾 Gặp {result.pets.length} pet hoang dã! <span className="text-[#a29fb3]">Ném lưới để bắt trong 24 giờ →</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {result.pets.map((p, i) => (
+              <div key={i} className="flex w-16 flex-col items-center gap-1 text-center text-xs">
+                <PetAvatar species={p.species} rarity={p.rarity} size={48} />
+                <span className={`leading-tight ${PET_RARITY[p.rarity].text}`}>{p.species}</span>
+                <span className="text-[#7d7a8c]">{PET_RARITY[p.rarity].label}</span>
+              </div>
+            ))}
+          </div>
+        </Link>
+      )}
+
+      {(notable.length > 0 || elites.length > 0) && (
+        <div className="mt-3 rounded-xl bg-black/20 border border-white/[0.06] p-3">
+          {notable.length > 0 && (
+            <div className="flex flex-wrap gap-3 mb-2">
+              {notable.map((f) => (
+                <div key={f.turn} className="flex w-20 flex-col items-center gap-1 text-center text-xs">
+                  <EnemyAvatar name={f.enemy} size={64} boss={f.boss} />
+                  <span className={`leading-tight ${ENEMY_TIER_TEXT[enemyTier(f.enemy, f.boss)]}`}>{f.enemy}</span>
+                  <span className={f.result === 'win' ? 'text-[#8fe0b0]' : 'text-[#e09595]'}>
+                    T{f.turn} · {f.result === 'win' ? 'hạ' : f.result === 'flee' ? 'rút lui' : 'gục'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {elites.length > 0 && (
+            <p className="text-xs text-[#a29fb3]">
+              <span className="text-[#8fc4e0]">Tinh Anh</span>: gặp {elites.length}, hạ {elitesWon}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Log từng lượt — gấp lại mặc định để tổng kết nằm gọn trên đầu */}
+      <button
+        type="button"
+        onClick={() => setShowLog((v) => !v)}
+        className="mt-3 w-full rounded-xl border border-white/[0.08] bg-black/20 py-2 text-xs text-[#c9c4d4] hover:bg-white/[0.06]"
+      >
+        📜 Nhật ký {result.fights.length} trận {showLog ? '▴' : '▾'}
+      </button>
+      {showLog && (
+        <div
+          ref={listRef}
+          className="mt-3 max-h-96 overflow-y-auto rounded-xl bg-black/30 border border-white/[0.06] divide-y divide-white/[0.05]"
+        >
+          {result.fights.map((f) => (
+            <TurnRow key={f.turn} fight={f} maxHp={result.max_hp} dropInfo={dropInfo} />
+          ))}
+        </div>
+      )}
+
+      {result.last_fight && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowLastFight((v) => !v)}
+            className="mt-3 text-xs text-[#a29fb3] hover:text-white"
+          >
+            📜 {showLastFight ? 'Ẩn' : 'Xem'} chi tiết trận cuối (T{result.last_fight.turn} · {result.last_fight.enemy})
+          </button>
+          {showLastFight && <LastFightLog fight={result.last_fight} />}
+        </>
       )}
     </div>
   )
@@ -523,5 +578,3 @@ function TurnRow({
     </div>
   )
 }
-
-
