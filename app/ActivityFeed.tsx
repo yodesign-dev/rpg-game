@@ -11,7 +11,7 @@ export type FeedEntry = {
   character_id: string | null
   character_name: string
   character_title: string | null
-  kind: 'boss_kill' | 'legendary_item' | 'title' | 'tower' | 'gacha_jackpot'
+  kind: 'boss_kill' | 'legendary_item' | 'title' | 'tower' | 'gacha_jackpot' | 'pet_catch'
   payload: {
     boss?: string
     where?: string
@@ -21,6 +21,7 @@ export type FeedEntry = {
     title?: string
     emoji?: string
     floor?: number
+    pet?: string
   }
   created_at: string
 }
@@ -70,10 +71,14 @@ export default function ActivityFeed({
             return (
               <li key={e.id} className="flex gap-2.5 text-xs leading-relaxed">
                 <span className="shrink-0 text-base leading-5">
-                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'title' ? '🎖️' : e.kind === 'tower' ? '🗼' : e.kind === 'gacha_jackpot' ? '💎' : '✨'}
+                  {e.kind === 'boss_kill' ? '👑' : e.kind === 'pet_catch' ? '🐾' : e.kind === 'title' ? '🎖️' : e.kind === 'tower' ? '🗼' : e.kind === 'gacha_jackpot' ? '💎' : '✨'}
                 </span>
                 <div className="min-w-0">
-                  {e.kind === 'gacha_jackpot' ? (
+                  {e.kind === 'pet_catch' ? (
+                    <p className="text-[#c9c4d4]">
+                      {name} đã bắt được pet <b className="text-[#f0c060]">{e.payload.pet}</b> Huyền Thoại!
+                    </p>
+                  ) : e.kind === 'gacha_jackpot' ? (
                     <p className="text-[#c9c4d4]">
                       {name} trúng <b className="text-[#f7c8f7]">JACKPOT</b> ở Thương Nhân Bí Ẩn:{' '}
                       <b className="text-[#f0c060]">{e.payload.item}</b>!

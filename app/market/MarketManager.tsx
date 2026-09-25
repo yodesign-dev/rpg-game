@@ -34,6 +34,7 @@ type ShopItem = {
   buff_key: string | null
   description: string | null
   icon: string | null
+  net_tier: number | null
 }
 
 // Khớp buy_item: giá = buy_price + price_per_level × cấp
@@ -110,7 +111,12 @@ export default function MarketManager({
     {
       title: '🧪 TIẾP TẾ',
       note: 'Bình máu tự uống trong khám phá / tháp khi HP dưới 35% (tối đa 2 bình mỗi chuyến).',
-      rows: items.filter((i) => !i.buff_key),
+      rows: items.filter((i) => !i.buff_key && !i.net_tier),
+    },
+    {
+      title: '🕸️ LƯỚI BẮT PET',
+      note: 'Ném vào pet hoang dã gặp khi Thám Hiểm (trang Pet). Lưới xịn hơn bắt pet hiếm dễ hơn.',
+      rows: items.filter((i) => i.net_tier),
     },
     {
       title: '📜 CUỘN & BÙA',

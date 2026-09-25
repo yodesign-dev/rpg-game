@@ -210,8 +210,9 @@ export default async function CharacterPage() {
             {/* eslint-disable-next-line react-hooks/purity -- server component: thời điểm render là "bây giờ" */}
             <ActivityFeed entries={(feed ?? []) as FeedEntry[]} myCharacterId={character.id} now={Date.now()} />
 
-            <div className="grid grid-cols-4 gap-2 pt-1">
+            <div className="grid grid-cols-5 gap-2 pt-1">
               {[
+                { href: '/pets', icon: '🐾', label: 'Pet' },
                 { href: '/titles', icon: '🎖️', label: 'Danh hiệu' },
                 { href: '/ranking', icon: '🏆', label: 'Xếp hạng' },
                 { href: '/training', icon: '🎯', label: 'Nộm tập' },

@@ -8,6 +8,9 @@ import { ItemIcon, LastFightLog, Meter, RARITY_TEXT, type LastFight } from '../c
 import EnemyAvatar, { ENEMY_TIER_TEXT, EnemyTraits, enemyTier } from '../components/EnemyAvatar'
 import { ENEMY_TRAITS } from '@/lib/enemies'
 import SupplyResult from '../components/SupplyResult'
+import PetAvatar from '../components/PetAvatar'
+import Link from 'next/link'
+import { PET_RARITY, type PetRarity } from '@/lib/pets'
 
 
 
@@ -39,6 +42,7 @@ type Fight = {
   guard?: boolean
   log?: LastFight['log']
   traits?: string[]
+  pet?: PetRarity | null
 }
 
 
@@ -63,6 +67,7 @@ type ExploreResult = {
   drops: { key: string; name: string; icon: string | null; rarity: string; quantity: number }[]
   fights: Fight[]
   last_fight: LastFight | null
+  pets?: { species: string; rarity: PetRarity; level: number }[]
 }
 
 const TURN_PRESETS = [10, 25, 50, 100]
@@ -355,6 +360,26 @@ function ResultPanel({ result, zone }: { result: ExploreResult; zone: Zone }) {
         </div>
       )}
 
+      {!!result.pets?.length && (
+        <Link
+          href="/pets"
+          className="mt-3 block rounded-xl border border-[#f0c060]/40 bg-[#f0c060]/[0.07] p-3 hover:bg-[#f0c060]/[0.12] transition-colors"
+        >
+          <p className="text-sm text-[#f1dba0]">
+            🐾 Gặp {result.pets.length} pet hoang dã! <span className="text-[#a29fb3]">Ném lưới để bắt trong 24 giờ →</span>
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {result.pets.map((p, i) => (
+              <div key={i} className="flex w-16 flex-col items-center gap-1 text-center text-xs">
+                <PetAvatar species={p.species} rarity={p.rarity} size={48} />
+                <span className={`leading-tight ${PET_RARITY[p.rarity].text}`}>{p.species}</span>
+                <span className="text-[#7d7a8c]">{PET_RARITY[p.rarity].label}</span>
+              </div>
+            ))}
+          </div>
+        </Link>
+      )}
+
       {/* Log từng lượt */}
       <div
         ref={listRef}
@@ -462,6 +487,7 @@ function TurnRow({
         )}
         {f.guard && <span className="text-[#c8f5dc]">🛡️ Bùa cứu</span>}
         {f.potion && <span className="text-[#c8f5dc]">🧪 {f.potion}</span>}
+        {f.pet && <span className={PET_RARITY[f.pet].text}>🐾 gặp pet {PET_RARITY[f.pet].label}</span>}
         {f.drops.map((d, i) => (
           <span key={i} className={`flex items-center gap-1 ${RARITY_TEXT[d.rarity] ?? RARITY_TEXT.common}`}>
             <ItemIcon icon={dropInfo[d.key]?.icon ?? null} size={14} />+{dropInfo[d.key]?.name ?? d.key}
