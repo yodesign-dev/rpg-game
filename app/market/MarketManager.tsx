@@ -62,15 +62,32 @@ export default function MarketManager({
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [qty, setQty] = useState<Record<string, number>>({})
 
-  async function buy(item: ShopItem) {
+  // Số lượng tối đa mua được: theo vàng, lượt còn lại hôm nay, trần 99
+  function maxQty(item: ShopItem) {
+    const price = shopPrice(item, level)
+    const byGold = price > 0 ? Math.floor(localGold / price) : 99
+    const left = item.daily_limit == null ? 99 : Math.max(0, item.daily_limit - (bought[item.id] ?? 0))
+    return Math.max(0, Math.min(99, byGold, left))
+  }
+
+  function setItemQty(item: ShopItem, n: number) {
+    const max = Math.max(1, maxQty(item))
+    setQty((q) => ({
+      ...q,
+      [item.id]: Math.min(max, Math.max(1, Math.floor(n) || 1)),
+    }))
+  }
+
+  async function buy(item: ShopItem, quantity: number) {
     setError(null)
     setNotice(null)
     setPendingItemId(item.id)
     const { data, error: rpcError } = await createClient().rpc('buy_item', {
       p_character_id: characterId,
       p_item_id: item.id,
-      p_quantity: 1,
+      p_quantity: quantity,
     })
     setPendingItemId(null)
     if (rpcError) return setError(rpcError.message)
@@ -78,8 +95,9 @@ export default function MarketManager({
     const res = (Array.isArray(data) ? data[0] : data) as { new_gold: number } | undefined
     if (res) {
       setLocalGold(res.new_gold)
-      setBought((b) => ({ ...b, [item.id]: (b[item.id] ?? 0) + 1 }))
-      setNotice(`Đã mua ${item.name} — vào Túi Đồ để dùng.`)
+      setBought((b) => ({ ...b, [item.id]: (b[item.id] ?? 0) + quantity }))
+      setQty((q) => ({ ...q, [item.id]: 1 }))
+      setNotice(`Đã mua ${quantity > 1 ? `${quantity}× ` : ''}${item.name} — vào Túi Đồ để dùng.`)
       router.refresh()
     }
   }
@@ -115,7 +133,10 @@ export default function MarketManager({
               const price = shopPrice(item, level)
               const left = item.daily_limit == null ? null : Math.max(0, item.daily_limit - (bought[item.id] ?? 0))
               const waiting = !!item.buff_key && pendingBuffs.includes(item.buff_key)
-              const canBuy = localGold >= price && left !== 0
+              const multi = !item.buff_key
+              const max = maxQty(item)
+              const n = multi ? Math.min(qty[item.id] ?? 1, Math.max(1, max)) : 1
+              const canBuy = localGold >= price * n && left !== 0
               const isPending = pendingItemId === item.id
               return (
                 <div
@@ -140,18 +161,52 @@ export default function MarketManager({
                       {waiting && <span className="text-[#8fe0b0]"> · đang chờ dùng</span>}
                     </p>
                   </div>
-                  <button
-                    onClick={() => buy(item)}
-                    disabled={!canBuy || isPending}
-                    className="shrink-0 whitespace-nowrap rounded-lg border border-[#e0b050]/60 px-3 py-2 text-xs text-[#f1dba0]
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {multi && left !== 0 && (
+                      <div className="flex items-center gap-1 text-xs">
+                        <button
+                          onClick={() => setItemQty(item, n - 1)}
+                          disabled={n <= 1 || isPending}
+                          className="h-7 w-7 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={Math.max(1, max)}
+                          value={n}
+                          onChange={(e) => setItemQty(item, Number(e.target.value))}
+                          disabled={isPending}
+                          className="h-7 w-11 rounded-md border border-white/15 bg-[#0b0a10] text-center text-[#e8e4f0]
+                          [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                        <button
+                          onClick={() => setItemQty(item, n + 1)}
+                          disabled={n >= max || isPending}
+                          className="h-7 w-7 rounded-md border border-white/15 text-[#c9c4d4] hover:bg-white/10 disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                        <button
+                          onClick={() => setItemQty(item, max)}
+                          disabled={max <= 1 || n >= max || isPending}
+                          className="h-7 rounded-md border border-white/15 px-1.5 text-[10px] text-[#a29fb3] hover:bg-white/10 disabled:opacity-30"
+                        >
+                          MAX
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => buy(item, n)}
+                      disabled={!canBuy || isPending}
+                      className="shrink-0 whitespace-nowrap rounded-lg border border-[#e0b050]/60 px-3 py-2 text-xs text-[#f1dba0]
                       transition-colors hover:bg-[#e0b050]/15 disabled:opacity-30"
-                  >
-                    {isPending
-                      ? '…'
-                      : left === 0
-                        ? 'Hết lượt'
-                        : `🪙 ${price.toLocaleString('vi-VN')}`}
-                  </button>
+                    >
+                      {isPending ? '…' : left === 0 ? 'Hết lượt' : `🪙 ${(price * n).toLocaleString('vi-VN')}`}
+                    </button>
+                  </div>
                 </div>
               )
             })}
