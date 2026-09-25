@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ui } from '@/app/fonts'
 import { createClient } from '@/lib/supabase/client'
+import ChangePasswordForm from './ChangePasswordForm'
 
 
 export default function AccountActions({
@@ -14,6 +15,7 @@ export default function AccountActions({
 }) {
   const [signingOut, setSigningOut] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -44,8 +46,16 @@ export default function AccountActions({
 
   return (
     <div className="flex flex-col items-stretch gap-3">
-      {!confirmingDelete ? (
+      {changingPassword ? (
+        <ChangePasswordForm onDone={() => setChangingPassword(false)} />
+      ) : !confirmingDelete ? (
         <>
+          <button
+            onClick={() => setChangingPassword(true)}
+            className={`${ui.className} text-left text-xs text-[#a89b7f] hover:text-[#f1e6c8] py-1.5`}
+          >
+            Đổi mật khẩu
+          </button>
           <button
             onClick={signOut}
             disabled={signingOut}
